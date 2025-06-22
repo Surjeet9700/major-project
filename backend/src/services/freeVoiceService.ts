@@ -134,11 +134,18 @@ RESPONSE:`;
 
       console.log(`🧠 Sending to LLM: "${userInput}" | Status: ${bookingStatus}`);
       
-      // Use OpenRouter to generate response
+      // Build context with session information for better fallback handling
+      const sessionContext = [
+        `Session data: Name=${session.extractedData.name || 'unknown'}, Phone=${session.extractedData.phone || 'unknown'}, Service=${session.extractedData.service || 'unknown'}`,
+        `Booking status: ${bookingStatus}`,
+        ...session.conversationHistory.slice(-3).map(msg => `${msg.role}: ${msg.content}`)
+      ];
+      
+      // Use OpenRouter to generate response with session context
       const llmResponse = await this.openRouterService.generateResponse(
         fullPrompt,
         session.language,
-        []
+        sessionContext // Pass session context for intelligent fallback
       );
 
       if (llmResponse && llmResponse.text && llmResponse.text.trim().length > 0) {
@@ -329,58 +336,125 @@ RESPONSE GUIDELINES:
   private extractUserData(session: ConversationSession, input: string): void {
     const lowerInput = input.toLowerCase();
 
-    // Extract phone number
-    const phonePatterns = [
-      /(?:phone|number|contact).*?(\d{10})/i,
-      /(\d{10})/,
-      /(\d{5}\s*\d{5})/,
-      /(\d{4}\s*\d{6})/,
-    ];
+    // Extract phone number with improved patterns
+    if (!session.extractedData.phone) { // Only extract if not already present
+      const phonePatterns = [
+        /(?:phone|number|contact|mobile).*?(\+?91[\s-]?\d{10})/i,
+        /(?:phone|number|contact|mobile).*?(\d{10})/i,
+        /(\+?91[\s-]?\d{10})/,
+        /(\d{10})/,
+        /(\d{5}[\s-]*\d{5})/,
+        /(\d{4}[\s-]*\d{6})/,
+      ];
 
-    for (const pattern of phonePatterns) {
-      const phoneMatch = input.match(pattern);
-      if (phoneMatch) {
-        const phoneDigits = phoneMatch[0].replace(/[^\d]/g, "");
-        if (phoneDigits.length >= 10) {
-          session.extractedData.phone = phoneDigits.slice(-10);
-          console.log('📞 Extracted phone:', session.extractedData.phone);
-          break;
+      for (const pattern of phonePatterns) {
+        const phoneMatch = input.match(pattern);
+        if (phoneMatch) {
+          const phoneDigits = phoneMatch[0].replace(/[^\d]/g, "");
+          if (phoneDigits.length >= 10) {
+            session.extractedData.phone = phoneDigits.slice(-10);
+            console.log('📞 Extracted phone:', session.extractedData.phone);
+            break;
+          }
         }
       }
     }
 
-    // Extract name (only from explicit statements)
-    const namePatterns = [
-      /(?:my name is|i am|name is|call me)\s+([a-zA-Z]+(?:\s[a-zA-Z]+)*?)(?:\s+and|\s+my|\s+mobile|\s+phone|$)/i,
-      /(?:मेरा नाम|नाम है)\s+([a-zA-Z]+(?:\s[a-zA-Z]+)*?)(?:\s+और|\s+मेरा|$)/i,
-    ];
+    // Enhanced name extraction with better filtering
+    if (!session.extractedData.name) { // Only extract if not already present
+      const namePatterns = [
+        /(?:my name is|i am|name is|call me|myself)\s+([a-zA-Z]+(?:\s[a-zA-Z]+){0,2})(?:\s+and|\s+my|\s+mobile|\s+phone|\s+number|\s+from|\s+want|\s+need|\s+for|\.|\,|$)/i,
+        /(?:मेरा नाम|नाम है|मैं हूं)\s+([a-zA-Z]+(?:\s[a-zA-Z]+){0,2})(?:\s+और|\s+मेरा|\s+है|\s+से|\s+चाहिए|\.|\,|$)/i,
+        /(?:this is|speaking)\s+([a-zA-Z]+(?:\s[a-zA-Z]+){0,2})(?:\s+and|\s+my|\s+from|\s+calling|\.|\,|$)/i,
+        // Additional pattern for simple single word names
+        /^([A-Z][a-z]{2,15})$/, // Matches capitalized single words like "Rohit"
+        /^\s*([A-Z][a-z]{2,15})\s*$/, // With optional whitespace
+      ];
 
-    for (const pattern of namePatterns) {
-      const nameMatch = input.match(pattern);
-      if (nameMatch && nameMatch[1]) {
-        const name = nameMatch[1].trim();
-        if (name.length >= 2 && name.length <= 20 && /^[a-zA-Z\s]+$/.test(name)) {
-          session.extractedData.name = name;
-          console.log('👤 Extracted name:', name);
-          break;
+      // Words to exclude from name extraction (common non-name words)
+      const excludeWords = [
+        'interested', 'booking', 'service', 'photography', 'wedding', 'portrait', 'event',
+        'want', 'need', 'like', 'from', 'studio', 'photographer', 'camera', 'photo',
+        'picture', 'shoot', 'session', 'package', 'price', 'cost', 'today', 'tomorrow',
+        'calling', 'looking', 'planning', 'getting', 'having', 'doing', 'going',
+        'thanks', 'thank', 'yes', 'okay', 'sure', 'fine', 'good', 'great', 'hello', 'hi',
+        'रुचि', 'बुकिंग', 'सेवा', 'फोटोग्राफी', 'शादी', 'चाहिए', 'स्टूडियो', 'फोन'
+      ];
+
+      for (const pattern of namePatterns) {
+        const nameMatch = input.match(pattern);
+        if (nameMatch && nameMatch[1]) {
+          const name = nameMatch[1].trim();
+          const nameWords = name.split(/\s+/);
+          
+          // Check if the extracted text contains excluded words
+          const hasExcludedWords = nameWords.some(word => 
+            excludeWords.includes(word.toLowerCase())
+          );
+          
+          // Validate name: proper length, only letters and spaces, no excluded words
+          if (name.length >= 2 && name.length <= 40 && 
+              /^[a-zA-Z\s]+$/.test(name) && 
+              !hasExcludedWords &&
+              nameWords.length <= 4 && // Max 4 words for a name
+              nameWords.every(word => word.length >= 2)) { // Each word at least 2 chars
+            session.extractedData.name = name;
+            console.log('👤 Extracted name:', name);
+            break;
+          } else {
+            console.log('👤 Rejected potential name:', name, 'Reason: validation failed');
+          }
         }
       }
     }
 
-    // Extract service type
-    if (lowerInput.includes("wedding") || lowerInput.includes("शादी")) {
-      session.extractedData.service = "wedding";
-    } else if (lowerInput.includes("portrait") || lowerInput.includes("पोर्ट्रेट")) {
-      session.extractedData.service = "portrait";
-    } else if (lowerInput.includes("event") || lowerInput.includes("birthday") || lowerInput.includes("party")) {
-      session.extractedData.service = "event";
+    // Extract service type with more variations
+    if (!session.extractedData.service) { // Only extract if not already present
+      if (lowerInput.includes("wedding") || lowerInput.includes("शादी") || lowerInput.includes("marriage") || lowerInput.includes("विवाह")) {
+        session.extractedData.service = "wedding";
+        console.log('💒 Extracted service: wedding');
+      } else if (lowerInput.includes("portrait") || lowerInput.includes("पोर्ट्रेट") || lowerInput.includes("individual") || lowerInput.includes("personal")) {
+        session.extractedData.service = "portrait";
+        console.log('🖼️ Extracted service: portrait');
+      } else if (lowerInput.includes("event") || lowerInput.includes("birthday") || lowerInput.includes("party") || 
+                 lowerInput.includes("function") || lowerInput.includes("celebration") || lowerInput.includes("इवेंट")) {
+        session.extractedData.service = "event";
+        console.log('🎉 Extracted service: event');
+      } else if (lowerInput.includes("passport") || lowerInput.includes("पासपोर्ट") || lowerInput.includes("id photo")) {
+        session.extractedData.service = "passport";
+        console.log('📷 Extracted service: passport');
+      }
     }
 
-    // Extract date
-    if (lowerInput.includes("tomorrow") || lowerInput.includes("कल")) {
-      session.extractedData.date = "tomorrow";
-    } else if (lowerInput.includes("day after tomorrow") || lowerInput.includes("परसों")) {
-      session.extractedData.date = "day after tomorrow";
+    // Extract date with more variations
+    if (!session.extractedData.date) { // Only extract if not already present
+      if (lowerInput.includes("tomorrow") || lowerInput.includes("कल")) {
+        session.extractedData.date = "tomorrow";
+        console.log('📅 Extracted date: tomorrow');
+      } else if (lowerInput.includes("day after tomorrow") || lowerInput.includes("परसों")) {
+        session.extractedData.date = "day after tomorrow";
+        console.log('📅 Extracted date: day after tomorrow');
+      } else if (lowerInput.includes("today") || lowerInput.includes("आज")) {
+        session.extractedData.date = "today";
+        console.log('📅 Extracted date: today');
+      } else if (lowerInput.includes("next week") || lowerInput.includes("अगले हफ्ते")) {
+        session.extractedData.date = "next week";
+        console.log('📅 Extracted date: next week');
+      }
+    }
+
+    // Extract time preferences
+    if (!session.extractedData.time) { // Only extract if not already present
+      if (lowerInput.includes("morning") || lowerInput.includes("सुबह")) {
+        session.extractedData.time = "morning";
+        console.log('⏰ Extracted time: morning');
+      } else if (lowerInput.includes("afternoon") || lowerInput.includes("दोपहर")) {
+        session.extractedData.time = "afternoon";
+        console.log('⏰ Extracted time: afternoon');
+      } else if (lowerInput.includes("evening") || lowerInput.includes("शाम")) {
+        session.extractedData.time = "evening";
+        console.log('⏰ Extracted time: evening');
+      }
     }
   }
 

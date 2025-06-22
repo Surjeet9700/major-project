@@ -85,13 +85,13 @@ export class OpenRouterService {
         },        body: JSON.stringify({
           model: this.model,
           messages: messages,
-          max_tokens: 150,
+          max_tokens: 150, // Shorter responses for voice conversations - faster and more natural
           temperature: 0.3,
           stream: false,
         }),
       });      if (response.status === 429) {
         console.warn("Rate limit hit, using intelligent fallback");
-        return this.getRateLimitFallback(userInput, language);
+        return this.getRateLimitFallback(userInput, language, context);
       }
 
       if (!response.ok) {
@@ -481,32 +481,71 @@ You need to help the user and suggest next steps. Always provide action-oriented
     };
 
     return actionMap[intent]?.[language] || actionMap["help"][language];
-  }
-  private getRateLimitFallback(userInput: string, language: "hi" | "en"): AIResponse {
-    const lowerInput = userInput.toLowerCase();
+  }  private getRateLimitFallback(userInput: string, language: "hi" | "en", context: string[] = []): AIResponse {
+    // Extract actual user input if a full prompt was passed
+    let actualUserInput = userInput;
+    if (userInput.includes("CURRENT USER INPUT:")) {
+      const match = userInput.match(/CURRENT USER INPUT:\s*(.+?)(?:\n|$)/);
+      if (match && match[1]) {
+        actualUserInput = match[1].trim();
+      }
+    }
+    
+    const lowerInput = actualUserInput.toLowerCase();
     
     let response = "";
     let intent = "general";
     
-    // Handle greetings
-    if (lowerInput.includes("hello") || lowerInput.includes("hi") || lowerInput.includes("नमस्ते")) {
-      response = language === "hi" 
-        ? "नमस्ते! Yuva Digital Studio में आपका स्वागत है। मैं आपकी फोटोग्राफी जरूरतों में मदद कर सकता हूं। कैसे मदद करूं?"
-        : "Hello! Welcome to Yuva Digital Studio. I can help with your photography needs. How can I assist you?";
-      intent = "greeting";
+    // Parse session context for better understanding
+    const contextText = context.join(' ').toLowerCase();
+    const hasNameInSession = contextText.includes('name=') && !contextText.includes('name=unknown') && !contextText.includes('name=null');
+    const hasPhoneInSession = contextText.includes('phone=') && !contextText.includes('phone=unknown') && !contextText.includes('phone=null');
+    const hasServiceInSession = contextText.includes('service=') && !contextText.includes('service=unknown') && !contextText.includes('service=null');
+    const hasBookingContext = contextText.includes('book') || contextText.includes('appointment');
+    
+    console.log(`🔄 Rate limit fallback - Input: "${actualUserInput}" | Has name: ${hasNameInSession}, phone: ${hasPhoneInSession}, service: ${hasServiceInSession}`);
+    console.log(`📋 Context: ${contextText}`);
+      // Handle name provided - check for actual names (proper nouns)
+    if (lowerInput.includes("name is") || lowerInput.includes("i am") || lowerInput.includes("my name") || 
+        lowerInput.includes("नाम") || /\b[A-Z][a-z]+\b/.test(actualUserInput)) {
+      if (hasNameInSession && !hasPhoneInSession) {
+        // Name already captured, need phone
+        response = language === "hi" 
+          ? "धन्यवाद! अब कृपया अपना मोबाइल नंबर बताएं।"
+          : "Thank you! Now please provide your mobile number.";
+      } else if (hasNameInSession && hasPhoneInSession && !hasServiceInSession) {
+        // Name and phone captured, need service
+        response = language === "hi" 
+          ? "बढ़िया! अब बताएं कि आपको कौन सी सेवा चाहिए?"
+          : "Great! Now tell me which service you need?";
+      } else if (!hasNameInSession) {
+        // First time providing name
+        response = language === "hi" 
+          ? "धन्यवाद! अब कृपया अपना मोबाइल नंबर बताएं।"
+          : "Thank you! Now please provide your mobile number.";
+      } else {
+        // All details captured
+        response = language === "hi" 
+          ? "सभी जानकारी मिल गई है। मैं आपकी बुकिंग कन्फर्म करता हूं।"
+          : "I have all the details. Let me confirm your booking.";
+      }
+      intent = "booking_continue";
     }
-    // Handle booking intentions
+    // Handle booking intentions FIRST (before greetings)
     else if (lowerInput.includes("book") || lowerInput.includes("appointment") || lowerInput.includes("अपॉइंटमेंट")) {
-      response = language === "hi" 
-        ? "जरूर! मैं आपकी बुकिंग में मदद करूंगा। कृपया बताएं - आपका नाम क्या है?"
-        : "Certainly! I'll help you with booking. Please tell me - what's your name?";
-      intent = "booking";
-    }
-    // Handle name provided
-    else if (lowerInput.includes("name is") || lowerInput.includes("i am") || lowerInput.includes("my name") || lowerInput.includes("नाम")) {
-      response = language === "hi" 
-        ? "धन्यवाद! अब कृपया अपना मोबाइल नंबर बताएं।"
-        : "Thank you! Now please provide your mobile number.";
+      if (!hasNameInSession) {
+        response = language === "hi" 
+          ? "जरूर! मैं आपकी बुकिंग में मदद करूंगा। कृपया बताएं - आपका नाम क्या है?"
+          : "Certainly! I'll help you with booking. Please tell me - what's your name?";
+      } else if (!hasPhoneInSession) {
+        response = language === "hi" 
+          ? "बुकिंग के लिए अब कृपया अपना मोबाइल नंबर बताएं।"
+          : "For booking, please provide your mobile number.";
+      } else {
+        response = language === "hi" 
+          ? "कौन सी सेवा चाहिए - Wedding, Portrait, या Event फोटोग्राफी?"
+          : "Which service do you need - Wedding, Portrait, or Event photography?";
+      }
       intent = "booking";
     }
     // Handle phone number
@@ -514,7 +553,32 @@ You need to help the user and suggest next steps. Always provide action-oriented
       response = language === "hi" 
         ? "बढ़िया! अब बताएं कि आपको कौन सी सेवा चाहिए - Wedding, Portrait, या Event फोटोग्राफी?"
         : "Great! Now tell me which service you need - Wedding, Portrait, or Event photography?";
-      intent = "booking";
+      intent = "booking_service";
+    }
+    // Handle user asking "what's your name" - clarify that AI is asking for user's name
+    else if (lowerInput.includes("what") && lowerInput.includes("your") && lowerInput.includes("name")) {
+      if (hasBookingContext) {
+        if (hasNameInSession && !hasPhoneInSession) {
+          response = language === "hi"
+            ? "मैंने आपका नाम नोट कर लिया है। अब कृपया अपना मोबाइल नंबर बताएं।"
+            : "I have your name noted. Now please provide your mobile number.";
+        } else {
+          response = language === "hi"
+            ? "मैं आपका नाम पूछ रहा हूं बुकिंग के लिए। कृपया अपना नाम बताएं।"
+            : "I'm asking for YOUR name for the booking. Please tell me your name.";
+        }
+        intent = "clarification";
+      } else {
+        response = language === "hi"
+          ? "मैं एक AI असिस्टेंट हूं। मैं आपकी बुकिंग में मदद कर सकता हूं। आपका नाम क्या है?"
+          : "I'm an AI assistant. I can help you with booking. What's your name?";
+        intent = "clarification";
+      }
+    }
+    // Handle greetings
+    else if (lowerInput.includes("hello") || lowerInput.includes("hi") || lowerInput.includes("नमस्ते")) {
+      response = this.getRandomGreeting(language);
+      intent = "greeting";
     }
     // Handle services inquiry
     else if (lowerInput.includes("service") || lowerInput.includes("photography") || lowerInput.includes("सेवा")) {
@@ -537,12 +601,31 @@ You need to help the user and suggest next steps. Always provide action-oriented
         : "Our Wedding Photography packages range from 35,000 to 1,25,000. This includes full day coverage, online gallery and editing. Please share your name to book.";
       intent = "service_specific";
     }
-    // Generic response
+    // Generic response based on session state
     else {
-      response = language === "hi" 
-        ? "मैं आपकी बात समझ गया। क्या आप फोटोग्राफी की बुकिंग करना चाहते हैं? या कुछ और जानकारी चाहिए?"
-        : "I understand. Would you like to book photography services? Or do you need some other information?";
-      intent = "clarification";
+      if (hasBookingContext) {
+        if (hasNameInSession && !hasPhoneInSession) {
+          response = language === "hi" 
+            ? "कृपया अपना मोबाइल नंबर बताएं।"
+            : "Please provide your mobile number.";
+          intent = "booking_continue";
+        } else if (!hasNameInSession) {
+          response = language === "hi" 
+            ? "बुकिंग के लिए कृपया अपना नाम बताएं।"
+            : "For booking, please tell me your name.";
+          intent = "booking_continue";
+        } else {
+          response = language === "hi" 
+            ? "आपको और कौन सी जानकारी चाहिए?"
+            : "What other information do you need?";
+          intent = "clarification";
+        }
+      } else {
+        response = language === "hi" 
+          ? "मैं आपकी बात समझ गया। क्या आप फोटोग्राफी की बुकिंग करना चाहते हैं?"
+          : "I understand. Would you like to book photography services?";
+        intent = "clarification";
+      }
     }
     
     return {
@@ -566,5 +649,27 @@ You need to help the user and suggest next steps. Always provide action-oriented
       language: language,
       nextAction: "retry"
     };
+  }
+
+  private getRandomGreeting(language: "hi" | "en"): string {
+    const greetingsEn = [
+      "Hello! Welcome to Yuva Digital Studio. How can I help you today?",
+      "Hi there! Welcome to Yuva Digital Studio. What can I do for you?",
+      "Good day! This is Yuva Digital Studio. How may I assist you?",
+      "Welcome to Yuva Digital Studio! I'm here to help with your photography needs.",
+      "Hello! Thanks for calling Yuva Digital Studio. What brings you here today?"
+    ];
+
+    const greetingsHi = [
+      "नमस्ते! Yuva Digital Studio में आपका स्वागत है। आज मैं आपकी कैसे मदद कर सकता हूं?",
+      "नमस्कार! Yuva Digital Studio में आपका स्वागत है। मैं आपकी क्या सेवा कर सकता हूं?",
+      "आदाब! यह Yuva Digital Studio है। आज मैं आपकी कैसे सहायता कर सकता हूं?",
+      "नमस्ते! Yuva Digital Studio में आपका हार्दिक स्वागत है। मैं यहां आपकी फोटोग्राफी की जरूरतों में मदद के लिए हूं।",
+      "प्रणाम! Yuva Digital Studio को कॉल करने के लिए धन्यवाद। आज आप यहां क्यों आए हैं?"
+    ];
+
+    const greetings = language === "hi" ? greetingsHi : greetingsEn;
+    const randomIndex = Math.floor(Math.random() * greetings.length);
+    return greetings[randomIndex];
   }
 }

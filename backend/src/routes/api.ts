@@ -663,7 +663,33 @@ router.post('/voice/conversation', asyncHandler(async (req: Request, res: Respon
 
 // Enhanced Voice Agent endpoint with TTS audio response
 router.post('/voice/conversation-audio', asyncHandler(async (req: Request, res: Response) => {
-  const { sessionId, userInput, language = 'hi' } = req.body;
+  const { sessionId, userInput, language = 'hi', action } = req.body;
+  
+  // Handle cleanup action
+  if (action === 'cleanup') {
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Session ID is required for cleanup'
+      });
+    }
+
+    try {
+      const { AudioCleanup } = await import('../utils/audioCleanup');
+      await AudioCleanup.cleanupSessionAudioFiles(sessionId);
+      
+      return res.json({
+        success: true,
+        message: `Cleaned up audio files for session ${sessionId}`
+      });
+    } catch (error) {
+      console.error('Error cleaning up session audio:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error cleaning up session audio files'
+      });
+    }
+  }
   
   if (!sessionId || !userInput) {
     return res.status(400).json({
@@ -681,12 +707,12 @@ router.post('/voice/conversation-audio', asyncHandler(async (req: Request, res: 
       gender: 'female' as const
     };
     const audioUrl = await ttsService.generateAndSaveAudio(textResponse, language, audioFilename, voiceSettings);
-    
-    res.json({
+      res.json({
       success: true,
       data: {
         response: textResponse,
-        audioUrl: audioUrl,
+        audioUrl: audioUrl, // Will be null if TTS fails, frontend can fallback to browser TTS
+        fallbackTTS: audioUrl === null, // Indicate to frontend to use browser TTS
         sessionId,
         timestamp: new Date().toISOString()
       }
@@ -905,5 +931,53 @@ router.get('/audio/:filename', (req: Request, res: Response) => {
     });
   }
 });
+
+// Cleanup endpoints
+router.post('/voice/cleanup-session', asyncHandler(async (req: Request, res: Response) => {
+  const { sessionId } = req.body;
+  
+  if (!sessionId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Session ID is required'
+    });
+  }
+
+  try {
+    const { AudioCleanup } = await import('../utils/audioCleanup');
+    await AudioCleanup.cleanupSessionAudioFiles(sessionId);
+    
+    res.json({
+      success: true,
+      message: `Cleaned up audio files for session ${sessionId}`
+    });
+  } catch (error) {
+    console.error('Error cleaning up session audio:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error cleaning up session audio files'
+    });
+  }
+}));
+
+router.post('/voice/cleanup-old-audio', asyncHandler(async (req: Request, res: Response) => {
+  const { maxAgeMinutes = 30 } = req.body;
+
+  try {
+    const { AudioCleanup } = await import('../utils/audioCleanup');
+    await AudioCleanup.cleanupOldAudioFiles(maxAgeMinutes);
+    
+    res.json({
+      success: true,
+      message: `Cleaned up audio files older than ${maxAgeMinutes} minutes`
+    });
+  } catch (error) {
+    console.error('Error cleaning up old audio:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error cleaning up old audio files'
+    });
+  }
+}));
 
 export default router;

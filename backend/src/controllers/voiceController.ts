@@ -10,6 +10,30 @@ import { OpenRouterService } from '../services/openrouter';
 // Create OpenRouter service instance
 const openRouterService = new OpenRouterService();
 
+const getRandomGreeting = (language: 'en' | 'hi') => {
+  const config = getBusinessConfig();
+  
+  const greetingsEn = [
+    `Hello! Welcome to ${config.name}. How can I help you today?`,
+    `Hi there! Welcome to ${config.name}. What can I do for you?`,
+    `Good day! This is ${config.name}. How may I assist you?`,
+    `Welcome to ${config.name}! I'm here to help with your photography needs.`,
+    `Hello! Thanks for calling ${config.name}. What brings you here today?`
+  ];
+
+  const greetingsHi = [
+    `नमस्ते! ${config.name} में आपका स्वागत है। आज मैं आपकी कैसे मदद कर सकता हूं?`,
+    `नमस्कार! ${config.name} में आपका स्वागत है। मैं आपकी क्या सेवा कर सकता हूं?`,
+    `आदाब! यह ${config.name} है। आज मैं आपकी कैसे सहायता कर सकता हूं?`,
+    `नमस्ते! ${config.name} में आपका हार्दिक स्वागत है। मैं यहां आपकी फोटोग्राफी की जरूरतों में मदद के लिए हूं।`,
+    `प्रणाम! ${config.name} को कॉल करने के लिए धन्यवाद। आज आप यहां क्यों आए हैं?`
+  ];
+
+  const greetings = language === 'hi' ? greetingsHi : greetingsEn;
+  const randomIndex = Math.floor(Math.random() * greetings.length);
+  return greetings[randomIndex];
+};
+
 const getTimeBasedGreeting = (language: 'en' | 'hi') => {
   const hour = new Date().getHours();
   const config = getBusinessConfig();

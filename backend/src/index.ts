@@ -25,6 +25,17 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Serve static files
 app.use('/public', express.static(path.join(__dirname, '../public')));
 
+// Serve audio files with proper headers
+app.use('/api/audio', express.static(path.join(__dirname, '../public'), {
+  setHeaders: (res, path) => {
+    if (path.endsWith('.wav')) {
+      res.setHeader('Content-Type', 'audio/wav');
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
+}));
+
 // Serve the call request page
 app.get('/request-call', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/request-call.html'));
@@ -64,13 +75,21 @@ app.use('/api', apiRoutes);
 app.use(notFoundHandler);
 app.use(globalErrorHandler);
 
-const server = app.listen(config.server.port, () => {
+const server = app.listen(config.server.port, async () => {
   console.log(`🚀 VoxBiz Backend Server running on port ${config.server.port}`);
   console.log(`📱 Environment: ${config.server.nodeEnv}`);
   console.log(`🌐 Base URL: ${config.server.baseUrl}`);
   
   if (config.server.nodeEnv === 'development') {
     console.log(`📋 API Documentation: ${config.server.baseUrl}`);
+  }
+  
+  // Start periodic audio cleanup
+  try {
+    const { AudioCleanup } = await import('./utils/audioCleanup');
+    AudioCleanup.startPeriodicCleanup(60); // Clean up every hour
+  } catch (error) {
+    console.warn('⚠️ Failed to start audio cleanup:', error);
   }
 });
 

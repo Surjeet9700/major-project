@@ -46,15 +46,18 @@ interface VoiceInterfaceProps {
   language?: 'en' | 'hi';
 }
 
-export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps) {
-  const [isActive, setIsActive] = useState(false);
+export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps) {  const [isActive, setIsActive] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
-  const [transcript, setTranscript] = useState('');  const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'hi'>(language);
+  const [transcript, setTranscript] = useState('');  
+  const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'hi'>(language);
   const [sessionId, setSessionId] = useState<string>(''); // Single session ID
   const [useTTSAudio, setUseTTSAudio] = useState(true); // Always use Bark TTS for better voice quality
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
+  const [lastSpeechEndTime, setLastSpeechEndTime] = useState(0);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -74,12 +77,48 @@ export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps)
       
       // Set language based on selection
       const langCode = selectedLanguage === 'hi' ? 'hi-IN' : 'en-US';
-      recognitionRef.current.lang = langCode;
-
-      recognitionRef.current.onresult = (event: any) => {
+      recognitionRef.current.lang = langCode;      recognitionRef.current.onresult = (event: any) => {
         const text = event.results[event.results.length - 1][0].transcript;
-        setTranscript(text);
-        handleUserMessage(text);
+          // Don't process if we're currently speaking or just finished speaking
+        const timeSinceLastSpeech = Date.now() - lastSpeechEndTime;
+        if (isSpeaking || isProcessingAudio || timeSinceLastSpeech < 5000) {
+          console.log('🚫 Ignoring speech while AI is speaking or too soon after:', text);
+          return;
+        }
+        
+        // Filter out potential AI speech feedback (common AI phrases)
+        const aiPhrases = [
+          'hello thank you for calling',
+          'yuva digital studio',
+          'how can i help',
+          'booking',
+          'photography',
+          'rupees',
+          'thank you for calling yuva',
+          'digital studio',
+          'ai assistant',
+          'नमस्ते युवा डिजिटल',
+          'स्टूडियो में आपका स्वागत',
+          'मैं आपका ai सहायक',
+          'युवा डिजिटल स्टूडियो',
+          'फोटोग्राफी',
+          'बुकिंग'
+        ];
+        
+        const lowerText = text.toLowerCase();
+        const isLikelyAISpeech = aiPhrases.some(phrase => lowerText.includes(phrase));
+        
+        if (isLikelyAISpeech) {
+          console.log('🚫 Filtering out potential AI speech feedback:', text);
+          return;
+        }
+        
+        // Only process if text is long enough and not just noise
+        if (text.trim().length >= 3) {
+          console.log('✅ Processing user speech:', text);
+          setTranscript(text);
+          handleUserMessage(text);
+        }
       };
 
       recognitionRef.current.onerror = (event: any) => {
@@ -93,15 +132,18 @@ export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps)
           }, 1000);
         }
         setIsListening(false);
-      };
-
-      recognitionRef.current.onend = () => {
+      };      recognitionRef.current.onend = () => {
         setIsListening(false);
-        // Auto-restart listening if call is active and AI is not speaking
-        if (isActive && !isSpeaking) {
+        // Prevent immediate restart if we just finished speaking
+        const timeSinceLastSpeech = Date.now() - lastSpeechEndTime;
+        const minWaitTime = 2000; // Wait at least 2 seconds after speaking ends
+        
+        if (isActive && !isSpeaking && !isProcessingAudio && timeSinceLastSpeech > minWaitTime) {
           setTimeout(() => {
-            startListening();
-          }, 500);
+            if (isActive && !isSpeaking && !isProcessingAudio) {
+              startListening();
+            }
+          }, 1000); // Additional 1 second delay
         }
       };
     }
@@ -136,13 +178,12 @@ export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps)
           text: result.data?.response || result.response || t.greeting,
           timestamp: new Date()
         };
-          setMessages([initialMessage]);
-          // Always use Bark TTS for AI responses for better voice quality
+          setMessages([initialMessage]);        // Use HuggingFace TTS if available, otherwise fallback to browser TTS
         if (result.data?.audioUrl) {
           playTTSAudio(result.data.audioUrl);
         } else {
-          // Fallback to browser TTS only if Bark TTS fails
-          console.warn('No Bark TTS audio available, falling back to browser TTS');
+          // Fallback to browser TTS when HuggingFace TTS fails
+          console.warn('No HuggingFace TTS audio available, falling back to browser TTS');
           speakText(initialMessage.text);
         }
         
@@ -224,16 +265,20 @@ export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps)
     setIsListening(false);
   };  const speakText = (text: string) => {
     if ('speechSynthesis' in window) {
-      setIsSpeaking(true);
+      // Stop listening immediately before speaking to prevent feedback
+      if (recognitionRef.current && isListening) {
+        recognitionRef.current.stop();
+        setIsListening(false);
+      }
+        setIsSpeaking(true);
       
-      // Format text for better speech synthesis
-      const formattedText = formatTextForSpeech(text, selectedLanguage);
-      const utterance = new SpeechSynthesisUtterance(formattedText);
+      const utterance = new SpeechSynthesisUtterance(text);
       
       // Set voice based on language
       const voices = speechSynthesis.getVoices();
       let selectedVoice = null;
-        if (selectedLanguage === 'hi') {
+      
+      if (selectedLanguage === 'hi') {
         selectedVoice = voices.find(voice => voice.lang.includes('hi')) || voices.find(voice => voice.name.includes('Hindi'));
       } else {
         selectedVoice = voices.find(voice => voice.lang.includes('en'));
@@ -246,92 +291,111 @@ export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps)
       utterance.rate = 1.3; // Increased from 0.9 to 1.3 for faster speech
       utterance.pitch = 1;
       utterance.volume = 0.8;
-        utterance.onend = () => {
+      
+      utterance.onstart = () => {
+        console.log('🔊 Starting browser TTS speech');
+      };
+      
+      utterance.onend = () => {
+        console.log('✅ Browser TTS speech ended');
         setIsSpeaking(false);
-        // Auto-restart listening after AI finishes speaking
+        setIsProcessingAudio(false);
+        setLastSpeechEndTime(Date.now()); // Track when speech ends
+        // Longer delay before restarting listening to prevent feedback
         if (isActive) {
           setTimeout(() => {
-            startListening();
-          }, 500);
+            if (isActive && !isSpeaking && !isProcessingAudio) {
+              console.log('🎤 Restarting listening after browser speech');
+              startListening();
+            }
+          }, 3000); // Increased to 3 seconds for better feedback prevention
         }
       };
       
-      utterance.onerror = () => {
+      utterance.onerror = (e) => {
+        console.error('❌ Browser TTS error:', e);
         setIsSpeaking(false);
+        setIsProcessingAudio(false);
+        setLastSpeechEndTime(Date.now());
         // Auto-restart listening on error too
         if (isActive) {
           setTimeout(() => {
-            startListening();
-          }, 500);
+            if (isActive && !isSpeaking && !isProcessingAudio) {
+              startListening();
+            }
+          }, 3000); // Increased delay
         }
       };
       
       window.speechSynthesis.speak(utterance);
-    }
-  };
-
-  // Format text for better speech synthesis
-  const formatTextForSpeech = (text: string, language: 'en' | 'hi'): string => {
-    let formattedText = text;
-    
-    if (language === 'hi') {
-      // Replace currency symbols and numbers for Hindi
-      formattedText = formattedText
-        .replace(/₹(\d+),?(\d+)/g, '$1 हज़ार $2 रुपए') // ₹35,000 -> 35 हज़ार रुपए
-        .replace(/₹(\d+)/g, '$1 रुपए') // ₹2500 -> 2500 रुपए
-        .replace(/\b(\d+),(\d+)\b/g, '$1 हज़ार $2') // 35,000 -> 35 हज़ार
-        .replace(/\b1,25,000\b/g, '1 लाख 25 हज़ार') // Special case for 1,25,000
-        .replace(/\+91/g, 'प्लस 91')
-        .replace(/(\d)/g, '$1 '); // Add spaces between digits for phone numbers
-    } else {
-      // Replace currency symbols and numbers for English
-      formattedText = formattedText
-        .replace(/₹(\d+),?(\d+)/g, '$1 thousand $2 rupees') // ₹35,000 -> 35 thousand rupees
-        .replace(/₹(\d+)/g, '$1 rupees') // ₹2500 -> 2500 rupees
-        .replace(/\b(\d+),(\d+)\b/g, '$1 thousand $2') // 35,000 -> 35 thousand
-        .replace(/\b1,25,000\b/g, '1 lakh 25 thousand') // Special case for 1,25,000
-        .replace(/\+91/g, 'plus 91')
-        .replace(/(\d)/g, '$1 '); // Add spaces between digits for phone numbers
-    }
-      return formattedText;
-  };
+    }  };
 
   const playTTSAudio = async (audioUrl: string) => {
     try {
-      setIsSpeaking(true);
+      // Stop listening immediately before playing audio to prevent feedback
+      if (recognitionRef.current && isListening) {
+        recognitionRef.current.stop();
+        setIsListening(false);
+      }
       
-      const audio = new Audio(audioUrl);
+      setIsSpeaking(true);
+      setIsProcessingAudio(true);
+      
+      // Construct full audio URL with backend base URL
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+      const fullAudioUrl = audioUrl.startsWith('http') ? audioUrl : `${backendUrl}${audioUrl}`;
+      
+      console.log('🔊 Playing TTS audio from:', fullAudioUrl);
+      const audio = new Audio(fullAudioUrl);
+      
+      audio.onloadstart = () => {
+        console.log('🔊 Starting TTS audio playback');
+      };
       
       audio.onended = () => {
+        console.log('✅ TTS audio playback ended');
         setIsSpeaking(false);
-        // Auto-restart listening after TTS audio finishes
+        setIsProcessingAudio(false);
+        setLastSpeechEndTime(Date.now()); // Track when TTS audio ends
+        // Longer delay before restarting listening to prevent feedback
         if (isActive) {
-          setTimeout(() => {
-            startListening();
-          }, 500);
+          setTimeout(() => {            
+            if (isActive && !isSpeaking && !isProcessingAudio) {
+              console.log('🎤 Restarting listening after TTS playback');
+              startListening();
+            }
+          }, 4000); // Increased to 4 seconds for better feedback prevention
         }
       };
       
-      audio.onerror = () => {
+      audio.onerror = (e) => {
+        console.error('❌ Error playing TTS audio:', e);
         setIsSpeaking(false);
-        console.error('Error playing TTS audio');
+        setIsProcessingAudio(false);
+        setLastSpeechEndTime(Date.now());
         // Auto-restart listening on error too
         if (isActive) {
           setTimeout(() => {
-            startListening();
-          }, 500);
+            if (isActive && !isSpeaking && !isProcessingAudio) {
+              startListening();
+            }
+          }, 3000); // Increased delay
         }
       };
       
       await audio.play();
     } catch (error) {
-      console.error('Error playing TTS audio:', error);
+      console.error('❌ Error playing TTS audio:', error);
       setIsSpeaking(false);
+      setIsProcessingAudio(false);
+      setLastSpeechEndTime(Date.now());
       // Auto-restart listening on error
       if (isActive) {
         setTimeout(() => {
-          startListening();
-        }, 500);
+          if (isActive && !isSpeaking && !isProcessingAudio) {
+            startListening();
+          }
+        }, 3000); // Increased delay
       }
     }
   };const handleUserMessage = async (text: string) => {
@@ -365,13 +429,12 @@ export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps)
         text: result.data?.response || result.response || 'Sorry, I couldn\'t process your request.',
         timestamp: new Date()
       };
-        setMessages(prev => [...prev, agentMessage]);
-        // Always use Bark TTS for AI responses for better voice quality
+        setMessages(prev => [...prev, agentMessage]);        // Use HuggingFace TTS if available, otherwise fallback to browser TTS
       if (result.data?.audioUrl) {
         playTTSAudio(result.data.audioUrl);
       } else {
-        // Fallback to browser TTS only if Bark TTS fails
-        console.warn('No Bark TTS audio available, falling back to browser TTS');
+        // Fallback to browser TTS when HuggingFace TTS fails
+        console.warn('No HuggingFace TTS audio available, falling back to browser TTS');
         speakText(agentMessage.text);
       }
         } catch (error) {

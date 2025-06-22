@@ -18,7 +18,13 @@ const translations = {
     speaking: "AI Speaking...",
     clickToTalk: "Click to Talk",
     callActive: "Call Active",
-    greeting: "Hello! Welcome to Yuva Digital Studio. How can I help you today?",
+    greetings: [
+      "Hello! Welcome to Yuva Digital Studio. How can I help you today?",
+      "Hi there! Welcome to Yuva Digital Studio. What can I do for you?",
+      "Good day! This is Yuva Digital Studio. How may I assist you?",
+      "Welcome to Yuva Digital Studio! I'm here to help with your photography needs.",
+      "Hello! Thanks for calling Yuva Digital Studio. What brings you here today?"
+    ],
     language: "Language",    micPermission: "Microphone permission required",
     speakNow: "Speak now...",
     processing: "Processing...",
@@ -37,7 +43,13 @@ const translations = {
     speaking: "AI बोल रहा है...",
     clickToTalk: "बात करने के लिए क्लिक करें",
     callActive: "कॉल सक्रिय",
-    greeting: "नमस्ते! युवा डिजिटल स्टूडियो में आपका स्वागत है। आज मैं आपकी कैसे मदद कर सकता हूं?",
+    greetings: [
+      "नमस्ते! युवा डिजिटल स्टूडियो में आपका स्वागत है। आज मैं आपकी कैसे मदद कर सकता हूं?",
+      "नमस्कार! युवा डिजिटल स्टूडियो में आपका स्वागत है। मैं आपकी क्या सेवा कर सकता हूं?",
+      "आदाब! यह युवा डिजिटल स्टूडियो है। आज मैं आपकी कैसे सहायता कर सकता हूं?",
+      "नमस्ते! युवा डिजिटल स्टूडियो में आपका हार्दिक स्वागत है। मैं यहां आपकी फोटोग्राफी की जरूरतों में मदद के लिए हूं।",
+      "प्रणाम! युवा डिजिटल स्टूडियो को कॉल करने के लिए धन्यवाद। आज आप यहां क्यों आए हैं?"
+    ],
     language: "भाषा",    
     micPermission: "माइक्रोफोन की अनुमति चाहिए",
     speakNow: "अब बोलें...",
@@ -69,12 +81,27 @@ export default function VoiceCallInterface({
   const [messages, setMessages] = useState<Message[]>([]);
   const [transcript, setTranscript] = useState('');
   const [liveTranscript, setLiveTranscript] = useState('');
-    const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const isRecognitionActive = useRef(false);
   const isCallActiveRef = useRef(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const t = translations[selectedLanguage];
+
+  const getRandomGreeting = () => {
+    const greetings = t.greetings;
+    const randomIndex = Math.floor(Math.random() * greetings.length);
+    return greetings[randomIndex];
+  };
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ 
+      behavior: "smooth", 
+      block: "nearest",
+      inline: "nearest"
+    });
+  }, [messages, liveTranscript]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -167,26 +194,75 @@ export default function VoiceCallInterface({
     }    console.log('📞 Starting call with sessionId:', sessionId);
     setIsCallActive(true);
     isCallActiveRef.current = true;
-    console.log('✅ Call state set to active');
-    setMessages([]);
+    console.log('✅ Call state set to active');    
+    const randomGreeting = getRandomGreeting();
     
     const initialMessage: Message = {
       id: Date.now().toString(),
       type: 'agent',
-      text: t.greeting,
+      text: randomGreeting,
       timestamp: new Date()
     };
+      setMessages([initialMessage]);
     
-    setMessages([initialMessage]);
-      setTimeout(() => {
-      speakText(t.greeting);
-      setTimeout(() => {
+    // Use backend API for initial greeting (Groq TTS)
+    setTimeout(async () => {
+      try {
+        const response = await fetch('/api/voice/conversation-audio', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sessionId: sessionId,
+            userInput: selectedLanguage === 'hi' ? 'नमस्ते' : 'hello',
+            language: selectedLanguage
+          })
+        });        
+        
+        if (response.ok) {          
+          const result = await response.json();
+          if (result.data?.audioUrl) {
+            try {
+              await playTTSAudio(result.data.audioUrl);
+            } catch (audioError) {
+              console.warn('TTS audio failed, falling back to browser speech:', audioError);
+              speakText(randomGreeting);
+            }
+          } else {
+            speakText(randomGreeting);
+          }
+        } else {
+          speakText(randomGreeting);
+        }
+      } catch (error) {
+        console.error('Error getting initial greeting:', error);
+        speakText(randomGreeting);
+      }
+        setTimeout(() => {
         console.log('🎤 Auto-starting speech recognition after greeting...');
         startListening();
-      }, 3000);
+      }, 2000); // Reduced from 3000 to 2000ms for faster interaction
     }, 500);
-  };  const endCall = () => {
+  };  const endCall = async () => {
     console.log('📞 Ending call');
+    
+    // Cleanup session audio files
+    try {
+      await fetch('/api/voice/conversation-audio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'cleanup',
+          sessionId: sessionId
+        })
+      });
+    } catch (error) {
+      console.warn('Failed to cleanup session audio files:', error);
+    }
+    
     setIsCallActive(false);
     isCallActiveRef.current = false;
     console.log('❌ Call state set to inactive');
@@ -194,7 +270,7 @@ export default function VoiceCallInterface({
     setIsSpeaking(false);
     setIsProcessing(false);
     setMessages([]);
-    setSessionId('voice-session-' + Date.now()); // Reset with new sessionId for next call
+    setSessionId('voice-session-' + Date.now());
     setLiveTranscript('');
     
     if (recognitionRef.current && isRecognitionActive.current) {
@@ -289,12 +365,16 @@ export default function VoiceCallInterface({
         type: 'agent',
         text: result.data?.response || result.response || 'Sorry, I couldn\'t process your request.',
         timestamp: new Date()
-      };
-
-      setMessages(prev => [...prev, agentMessage]);
+      };      
       
-      if (result.data?.audioUrl) {
-        await playTTSAudio(result.data.audioUrl);
+      setMessages(prev => [...prev, agentMessage]);
+        if (result.data?.audioUrl) {
+        try {
+          await playTTSAudio(result.data.audioUrl);
+        } catch (audioError) {
+          console.warn('TTS audio failed, falling back to browser speech:', audioError);
+          speakText(agentMessage.text);
+        }
       } else {
         speakText(agentMessage.text);
       }
@@ -348,46 +428,119 @@ export default function VoiceCallInterface({
     
     utterance.rate = selectedLanguage === 'hi' ? 0.8 : 0.9;
     utterance.pitch = 1;
-    utterance.volume = 0.8;
-      utterance.onend = () => {
+    utterance.volume = 0.8;    utterance.onend = () => {
       setIsSpeaking(false);
       if (isCallActiveRef.current) {
-        setTimeout(startListening, 1000);
+        setTimeout(startListening, 800); // Reduced delay for faster conversation
       }
     };
     
     utterance.onerror = () => {
       setIsSpeaking(false);
       if (isCallActiveRef.current) {
-        setTimeout(startListening, 1000);
+        setTimeout(startListening, 800); // Reduced delay
       }
     };
     
     synthRef.current.speak(utterance);
-  };
-
-  const playTTSAudio = async (audioUrl: string): Promise<void> => {
+  };  const playTTSAudio = async (audioUrl: string): Promise<void> => {
     return new Promise((resolve, reject) => {
       setIsSpeaking(true);
-        const audio = new Audio(`/api/audio/${audioUrl.split('/').pop()}`);
-        audio.onended = () => {
+      
+      // Use Next.js API proxy for audio files to avoid CORS issues
+      let fullAudioUrl: string;
+      if (audioUrl.startsWith('/api/audio/')) {
+        // Extract filename from backend audio URL
+        const filename = audioUrl.split('/').pop();
+        fullAudioUrl = `/api/audio/${filename}`;
+      } else if (audioUrl.startsWith('http')) {
+        fullAudioUrl = audioUrl;
+      } else {
+        // For relative URLs, extract filename and use Next.js proxy
+        const filename = audioUrl.replace('/api/audio/', '');
+        fullAudioUrl = `/api/audio/${filename}`;
+      }
+      
+      console.log('🔊 Playing audio via Next.js proxy:', fullAudioUrl);
+      
+      const audio = new Audio();
+      
+      let audioLoaded = false;
+      let playbackStarted = false;
+      
+      const cleanup = () => {
+        audio.removeEventListener('loadeddata', onLoaded);
+        audio.removeEventListener('canplay', onCanPlay);
+        audio.removeEventListener('ended', onEnded);
+        audio.removeEventListener('error', onError);
+        audio.removeEventListener('loadstart', onLoadStart);
+      };
+      
+      const onLoaded = () => {
+        audioLoaded = true;
+        console.log('✅ Audio loaded successfully');
+      };
+      
+      const onCanPlay = () => {
+        if (!playbackStarted) {
+          playbackStarted = true;
+          console.log('▶️ Starting audio playback');
+          audio.play().catch(onError);
+        }
+      };
+      
+      const onEnded = () => {
+        console.log('🔚 Audio playback ended');
+        cleanup();
         setIsSpeaking(false);
         if (isCallActiveRef.current) {
-          setTimeout(startListening, 1000);
+          setTimeout(startListening, 800);
         }
         resolve();
       };
-      
-      audio.onerror = () => {
+        const onError = (error?: any) => {
+        console.error('❌ Audio playback failed:', error);
+        cleanup();
         setIsSpeaking(false);
-        console.error('Error playing TTS audio');
+        
+        // Don't fallback to random greeting, use the actual response text
+        // that was already added to the message history
         if (isCallActiveRef.current) {
-          setTimeout(startListening, 1000);
+          setTimeout(startListening, 800);
         }
-        reject(new Error('Audio playback failed'));
+        
+        resolve();
       };
       
-      audio.play().catch(reject);
+      const onLoadStart = () => {
+        console.log('📥 Starting to load audio...');
+        setTimeout(() => {
+          if (!audioLoaded && !playbackStarted) {
+            console.warn('⚠️ Audio loading timeout, falling back to browser TTS');
+            onError('Audio loading timeout');
+          }
+        }, 5000);
+      };
+      
+      audio.addEventListener('loadeddata', onLoaded);
+      audio.addEventListener('canplay', onCanPlay);
+      audio.addEventListener('ended', onEnded);
+      audio.addEventListener('error', onError);
+      audio.addEventListener('loadstart', onLoadStart);
+      
+      audio.preload = 'auto';
+      audio.src = fullAudioUrl;
+      audio.load();
+      
+      setTimeout(() => {
+        if (!playbackStarted) {
+          console.log('🚀 Force starting audio playback');
+          audio.play().catch((err) => {
+            console.error('🚫 Force play failed:', err);
+            onError(err);
+          });
+        }
+      }, 1500);
     });
   };
   return (
@@ -433,7 +586,7 @@ export default function VoiceCallInterface({
               <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
               <span className="font-medium">{t.callActive}</span>
             </div>
-          </div>          <div className="bg-muted rounded-lg p-4 max-h-64 overflow-y-auto" style={{ borderRadius: 'var(--radius)' }}>
+          </div>          <div className="bg-muted rounded-lg p-4 max-h-64 overflow-y-auto scroll-smooth" style={{ borderRadius: 'var(--radius)' }}>
             <div className="space-y-3">
               {messages.map((message) => (
                 <div
@@ -473,10 +626,10 @@ export default function VoiceCallInterface({
                     <p className="text-muted-foreground italic flex items-center">
                       <IconMicrophone className="w-4 h-4 mr-2 text-destructive animate-pulse" />
                       {t.speakNow}
-                    </p>
-                  </div>
+                    </p>                  </div>
                 </div>
               )}
+              <div ref={messagesEndRef} />
             </div>
           </div>
 
