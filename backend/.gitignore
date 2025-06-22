@@ -12,3 +12,34 @@ dist/
 coverage/
 .nyc_output/
 build/
+
+# Audio files
+public/*.wav
+public/*.mp3
+public/tts_*.wav
+*.wav
+*.mp3
+*.ogg
+
+# Excel/CSV data files
+data/*.xlsx
+data/*.csv
+data/appointments.xlsx
+data/call_logs.xlsx
+
+# Database files
+*.sqlite
+*.sqlite3
+
+# Temporary files
+tmp/
+temp/
+
+# Cache
+.cache/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Sensitive logs
+webhook-logs/
