@@ -95,7 +95,7 @@ export default function ConversationalInterface({
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:3001/api/business/query', {
+      const response = await fetch('/api/business/query', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

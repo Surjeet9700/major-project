@@ -112,11 +112,10 @@ export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps)
     
     // Generate a single session ID for this conversation
     const newSessionId = 'demo-session-' + Date.now();
-    setSessionId(newSessionId);      
-    setTimeout(async () => {
+    setSessionId(newSessionId);        setTimeout(async () => {
       try {
         // Always use audio endpoint for Bark TTS
-        const response = await fetch('http://localhost:3001/api/voice/conversation-audio', {
+        const response = await fetch('/api/voice/conversation-audio', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -161,10 +160,9 @@ export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps)
           timestamp: new Date()
         };
         setMessages([fallbackMessage]);
-        
-        // Try to get TTS audio for greeting too
+          // Try to get TTS audio for greeting too
         try {
-          const greetingResponse = await fetch('http://localhost:3001/api/voice/conversation-audio', {
+          const greetingResponse = await fetch('/api/voice/conversation-audio', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -191,7 +189,9 @@ export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps)
         speakText(fallbackMessage.text);
       }
     }, 1000);
-  };  const endCall = () => {
+  };
+
+  const endCall = () => {
     setIsActive(false);
     setIsListening(false);
     setIsSpeaking(false);
@@ -300,7 +300,7 @@ export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps)
     try {
       setIsSpeaking(true);
       
-      const audio = new Audio(`http://localhost:3001${audioUrl}`);
+      const audio = new Audio(audioUrl);
       
       audio.onended = () => {
         setIsSpeaking(false);
@@ -344,7 +344,7 @@ export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps)
 
     setMessages(prev => [...prev, userMessage]);    try {
       // Always use audio endpoint for Bark TTS
-      const response = await fetch('http://localhost:3001/api/voice/conversation-audio', {
+      const response = await fetch('/api/voice/conversation-audio', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -387,10 +387,9 @@ export default function VoiceInterface({ language = 'en' }: VoiceInterfaceProps)
       };
       
       setMessages(prev => [...prev, fallbackMessage]);
-      
-      // Try to get TTS audio for fallback message too
+        // Try to get TTS audio for fallback message too
       try {
-        const fallbackResponse = await fetch('http://localhost:3001/api/voice/conversation-audio', {
+        const fallbackResponse = await fetch('/api/voice/conversation-audio', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
