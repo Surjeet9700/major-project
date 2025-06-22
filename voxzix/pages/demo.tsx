@@ -1,22 +1,17 @@
 import Head from 'next/head';
 import { useState } from 'react';
-import { motion } from 'framer-motion';
 import { ModernNavigation } from '@/components/modern-navigation';
 import Footer from '@/components/footer';
 import RequestCallForm from '@/components/request-call-form';
 import VoiceCallInterface from '@/components/voice-call-interface';
 import { 
   IconCamera, 
-  IconCalendar, 
   IconPhone, 
   IconMail,
   IconMapPin,
   IconStar,
-  IconUsers,
   IconClock,
   IconArrowLeft,
-  IconMicrophone,
-  IconVolume,
   IconDevices,
   IconLanguage,
   IconWorld
@@ -126,10 +121,7 @@ const translations = {
   }
 };
 
-export default function BusinessDemo() {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [showRequestForm, setShowRequestForm] = useState(false);
+export default function BusinessDemo() {  const [showRequestForm, setShowRequestForm] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'hi'>('en');
 
   const t = translations[selectedLanguage];

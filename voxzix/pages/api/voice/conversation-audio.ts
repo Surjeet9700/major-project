@@ -19,7 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: 'Request body is required' });
   }
 
-  const { sessionId, userInput, language } = req.body;
+  const { sessionId, userInput } = req.body;
 
   if (!sessionId || !userInput) {
     return res.status(400).json({ 
