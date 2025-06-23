@@ -1,16 +1,30 @@
 import { OrderTrackingRequest } from '../types';
 
 interface Order {
+  id: string;
   orderNumber: string;
   customerPhone: string;
   customerName: string;
-  items: string[];
-  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
-  orderDate: Date;
-  estimatedDelivery: Date;
+  orderType: string;
+  items: {
+    serviceName: string;
+    quantity: number;
+    price: number;
+  }[];
+  status: 'pending' | 'processing' | 'ready' | 'delivered' | 'cancelled';
+  orderDate: string;
+  estimatedDelivery?: string;
+  actualDelivery?: string;
   trackingNumber?: string;
-  deliveryAddress: string;
+  deliveryAddress?: string;
   totalAmount: number;
+  paymentStatus: 'pending' | 'partial' | 'completed';
+  notes?: string;
+  statusHistory: {
+    status: string;
+    timestamp: string;
+    notes?: string;
+  }[];
 }
 
 class OrderTrackingService {
@@ -46,27 +60,26 @@ class OrderTrackingService {
     }
     return false;
   }
-
   formatOrderStatus(order: Order, language: 'hi' | 'en'): string {
     const statusMessages = {
       hi: {
         pending: 'आपका ऑर्डर प्राप्त हुआ है और प्रोसेसिंग के लिए तैयार है',
         processing: 'आपका ऑर्डर तैयार किया जा रहा है',
-        shipped: 'आपका ऑर्डर भेज दिया गया है',
+        ready: 'आपका ऑर्डर तैयार है और पिकअप के लिए उपलब्ध है',
         delivered: 'आपका ऑर्डर डिलीवर हो गया है',
         cancelled: 'आपका ऑर्डर रद्द कर दिया गया है'
       },
       en: {
         pending: 'Your order has been received and is ready for processing',
         processing: 'Your order is being prepared',
-        shipped: 'Your order has been shipped',
+        ready: 'Your order is ready for pickup',
         delivered: 'Your order has been delivered',
         cancelled: 'Your order has been cancelled'
       }
     };
 
     const statusText = statusMessages[language][order.status];
-    const estimatedDelivery = order.estimatedDelivery.toLocaleDateString();
+    const estimatedDelivery = order.estimatedDelivery ? new Date(order.estimatedDelivery).toLocaleDateString() : 'Not specified';
 
     if (language === 'hi') {
       return `ऑर्डर नंबर ${order.orderNumber}: ${statusText}। अनुमानित डिलीवरी: ${estimatedDelivery}`;
@@ -125,15 +138,25 @@ class OrderTrackingService {
     totalAmount: number;
   }): Promise<Order> {
     const order: Order = {
+      id: this.generateOrderNumber(),
       orderNumber: this.generateOrderNumber(),
       customerPhone: orderData.customerPhone,
       customerName: orderData.customerName,
-      items: orderData.items,
+      orderType: 'Regular',
+      items: orderData.items.map(item => ({ serviceName: item, quantity: 1, price: 0 })),
       status: 'pending',
-      orderDate: new Date(),
-      estimatedDelivery: this.calculateEstimatedDelivery(),
+      orderDate: new Date().toISOString(),
+      estimatedDelivery: this.calculateEstimatedDelivery().toISOString(),
       deliveryAddress: orderData.deliveryAddress,
-      totalAmount: orderData.totalAmount
+      totalAmount: orderData.totalAmount,
+      paymentStatus: 'pending',
+      statusHistory: [
+        {
+          status: 'pending',
+          timestamp: new Date().toISOString(),
+          notes: 'Order received and awaiting confirmation'
+        }
+      ]
     };
 
     this.orders.push(order);
@@ -156,27 +179,102 @@ class OrderTrackingService {
   private initializeSampleOrders(): void {
     const sampleOrders: Order[] = [
       {
-        orderNumber: 'ORD123456',
+        id: 'ORD001',
+        orderNumber: 'ORD001',
         customerPhone: '+919876543210',
-        customerName: 'Test Customer',
-        items: ['Product A', 'Product B'],
-        status: 'shipped',
-        orderDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
-        estimatedDelivery: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000), // tomorrow
-        trackingNumber: 'TRK789012',
-        deliveryAddress: 'Test Address, City, State',
-        totalAmount: 1999
+        customerName: 'Rahul Sharma',
+        orderType: 'Wedding Photography',
+        items: [
+          { serviceName: 'Wedding Photography Package', quantity: 1, price: 25000 },
+          { serviceName: 'Album Printing', quantity: 1, price: 5000 }
+        ],
+        status: 'processing',
+        orderDate: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        totalAmount: 30000,
+        paymentStatus: 'partial',
+        notes: 'Wedding scheduled for next month',
+        statusHistory: [
+          {
+            status: 'pending',
+            timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+            notes: 'Order received and confirmed'
+          },
+          {
+            status: 'processing',
+            timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+            notes: 'Photography session completed, editing in progress'
+          }
+        ]
       },
       {
-        orderNumber: 'ORD789012',
+        id: 'ORD002',
+        orderNumber: 'ORD002',
         customerPhone: '+919876543211',
-        customerName: 'Another Customer',
-        items: ['Service Package'],
-        status: 'processing',
-        orderDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // 1 day ago
-        estimatedDelivery: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // day after tomorrow
-        deliveryAddress: 'Another Address, City, State',
-        totalAmount: 2999
+        customerName: 'Priya Patel',
+        orderType: 'Portrait Session',
+        items: [
+          { serviceName: 'Portrait Photography', quantity: 1, price: 8000 },
+          { serviceName: 'Digital Photos', quantity: 20, price: 2000 }
+        ],
+        status: 'ready',
+        orderDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+        totalAmount: 10000,
+        paymentStatus: 'completed',
+        statusHistory: [
+          {
+            status: 'pending',
+            timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+            notes: 'Order placed and payment received'
+          },
+          {
+            status: 'processing',
+            timestamp: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+            notes: 'Photo session scheduled'
+          },
+          {
+            status: 'ready',
+            timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+            notes: 'Photos edited and ready for pickup'
+          }
+        ]
+      },
+      {
+        id: 'ORD003',
+        orderNumber: 'ORD003',
+        customerPhone: '+919876543212',
+        customerName: 'Amit Kumar',
+        orderType: 'Product Photography',
+        items: [
+          { serviceName: 'Product Shoot', quantity: 50, price: 15000 }
+        ],
+        status: 'delivered',
+        orderDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+        actualDelivery: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        totalAmount: 15000,
+        paymentStatus: 'completed',
+        statusHistory: [
+          {
+            status: 'pending',
+            timestamp: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+            notes: 'Order confirmed'
+          },
+          {
+            status: 'processing',
+            timestamp: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+            notes: 'Product photography session completed'
+          },
+          {
+            status: 'ready',
+            timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+            notes: 'All photos edited and ready'
+          },
+          {
+            status: 'delivered',
+            timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+            notes: 'Photos delivered via email and cloud link'
+          }
+        ]
       }
     ];
 
@@ -185,13 +283,13 @@ class OrderTrackingService {
 
   // Helper method for voice interactions
   getOrderSummary(order: Order, language: 'hi' | 'en'): string {
-    const itemsList = order.items.join(', ');
-    const orderDate = order.orderDate.toLocaleDateString();
+    const itemsList = order.items.map(item => `${item.serviceName} (x${item.quantity})`).join(', ');
+    const orderDate = new Date(order.orderDate).toLocaleDateString();
     
     if (language === 'hi') {
-      return `ऑर्डर नंबर ${order.orderNumber}, ${orderDate} को प्लेस किया गया। आइटम: ${itemsList}। कुल राशि: ₹${order.totalAmount}`;
+      return `ऑर्डर नंबर ${order.orderNumber}, ${orderDate} को प्लेस किया गया। सेवाएं: ${itemsList}। कुल राशि: ₹${order.totalAmount}`;
     } else {
-      return `Order ${order.orderNumber} placed on ${orderDate}. Items: ${itemsList}. Total amount: ₹${order.totalAmount}`;
+      return `Order ${order.orderNumber} placed on ${orderDate}. Services: ${itemsList}. Total amount: ₹${order.totalAmount}`;
     }
   }
 }

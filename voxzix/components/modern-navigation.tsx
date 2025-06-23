@@ -12,6 +12,8 @@ export const ModernNavigation = () => {
     { name: "Features", href: "#features" },
     { name: "Benefits", href: "#benefits" },
     { name: "Demo", href: "/demo" },
+    { name: "Admin", href: "/admin-enhanced" },
+    { name: "Order Tracking", href: "/order-tracking" },
     { name: "Contact", href: "#contact" },
   ];
 

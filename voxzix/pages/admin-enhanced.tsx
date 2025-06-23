@@ -92,7 +92,8 @@ export default function AdminDashboard() {
             activeConnections: Math.floor(Math.random() * 10) + 5
           });
         }
-      }    } catch (err) {
+      }
+    } catch (err) {
       console.error('Metrics error:', err);
     }
     setLoading(false);
@@ -129,30 +130,39 @@ export default function AdminDashboard() {
       description: 'Return to main photography website',
       icon: Camera,
       href: '/',
-      color: 'bg-pink-500',
-      stats: 'Public website'
+      color: 'bg-yellow-500',
+      stats: 'Main website'
+    },
+    {
+      title: 'Order Tracking',
+      description: 'Track customer orders and deliveries',
+      icon: Package,
+      href: '/order-tracking',
+      color: 'bg-indigo-500',
+      stats: 'Track orders'
+    },
+    {
+      title: 'Analytics',
+      description: 'Business insights and reports',
+      icon: BarChart3,
+      href: '/analytics',
+      color: 'bg-emerald-500',
+      stats: 'View reports'
     }
   ];
 
-  const quickActions = [
-    { name: 'Download Appointments', icon: Download, href: `${API_URL}/api/appointments/download` },
-    { name: 'Download Call Logs', icon: Download, href: `${API_URL}/api/calls/download` },
-    { name: 'System Settings', icon: Settings, href: '#' },
-    { name: 'Analytics', icon: BarChart3, href: '#' }
-  ];
-
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-background">
+      <div className="bg-gradient-to-r from-slate-900 to-slate-700 text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-purple-600 to-cyan-600 flex items-center justify-center">
                 <Camera className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-slate-900">Yuva Digital Admin</h1>
-                <p className="text-sm text-slate-600">Voice Agent & Photography Management</p>
+                <h1 className="text-xl font-bold">Yuva Digital Admin</h1>
+                <p className="text-sm text-slate-300">Voice Agent & Photography Management</p>
               </div>
             </div>
             <Badge variant="secondary" className="bg-green-100 text-green-800">
@@ -160,10 +170,12 @@ export default function AdminDashboard() {
             </Badge>
           </div>
         </div>
-      </div>      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Dashboard Overview</h2>
-          <p className="text-slate-600">
+          <h2 className="text-2xl font-bold mb-2">Dashboard Overview</h2>
+          <p className="text-muted-foreground">
             Manage your photography business and AI voice agent from this central dashboard.
           </p>
         </div>
@@ -318,7 +330,9 @@ export default function AdminDashboard() {
               </CardContent>
             </Card>
           </div>
-        )}        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           <div className="lg:col-span-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {dashboardCards.map((card, index) => (
@@ -333,8 +347,8 @@ export default function AdminDashboard() {
                   </CardHeader>
                   <CardContent>
                     <CardTitle className="text-lg mb-2">{card.title}</CardTitle>
-                    <p className="text-slate-600 text-sm mb-3">{card.description}</p>
-                    <p className="text-xs text-slate-500 mb-4">{card.stats}</p>
+                    <p className="text-muted-foreground text-sm mb-3">{card.description}</p>
+                    <p className="text-xs text-muted-foreground mb-4">{card.stats}</p>
                     {card.external ? (
                       <a
                         href={card.href}
@@ -370,34 +384,34 @@ export default function AdminDashboard() {
               <CardContent>
                 <div className="space-y-4">
                   {analytics?.recentActivity.recentAppointments.slice(0, 3).map((activity, index) => (
-                    <div key={index} className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg">
+                    <div key={index} className="flex items-center gap-4 p-3 bg-muted rounded-lg">
                       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-slate-900">New appointment booked</p>
-                        <p className="text-xs text-slate-600">Wedding photography session - 2 hours ago</p>
+                        <p className="text-sm font-medium">New appointment booked</p>
+                        <p className="text-xs text-muted-foreground">Wedding photography session - 2 hours ago</p>
                       </div>
                     </div>
                   )) || (
                     <>
-                      <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg">
+                      <div className="flex items-center gap-4 p-3 bg-muted rounded-lg">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-slate-900">New appointment booked</p>
-                          <p className="text-xs text-slate-600">Wedding photography session - 2 hours ago</p>
+                          <p className="text-sm font-medium">New appointment booked</p>
+                          <p className="text-xs text-muted-foreground">Wedding photography session - 2 hours ago</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg">
+                      <div className="flex items-center gap-4 p-3 bg-muted rounded-lg">
                         <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-slate-900">Voice call completed</p>
-                          <p className="text-xs text-slate-600">Portrait session inquiry - 4 hours ago</p>
+                          <p className="text-sm font-medium">Voice call completed</p>
+                          <p className="text-xs text-muted-foreground">Portrait session inquiry - 4 hours ago</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg">
+                      <div className="flex items-center gap-4 p-3 bg-muted rounded-lg">
                         <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-slate-900">Order delivered</p>
-                          <p className="text-xs text-slate-600">Wedding album print - 6 hours ago</p>
+                          <p className="text-sm font-medium">Order delivered</p>
+                          <p className="text-xs text-muted-foreground">Wedding album print - 6 hours ago</p>
                         </div>
                       </div>
                     </>
@@ -455,101 +469,11 @@ export default function AdminDashboard() {
 
         {error && (
           <div className="text-center py-8">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-red-800">{error}</p>
+            <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
+              <p className="text-destructive">{error}</p>
             </div>
           </div>
         )}
-                    
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <Card className="border-0 shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="w-5 h-5" />
-                  Recent Activity
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-900">New appointment booked</p>
-                      <p className="text-xs text-slate-600">Wedding photography session - 2 hours ago</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-900">Voice call completed</p>
-                      <p className="text-xs text-slate-600">Portrait session inquiry - 4 hours ago</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg">
-                    <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-900">System test completed</p>
-                      <p className="text-xs text-slate-600">Voice flow test passed - 6 hours ago</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div>
-            <Card className="border-0 shadow-sm">
-              <CardHeader>
-                <CardTitle>Quick Actions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {quickActions.map((action, index) => (
-                    <Button
-                      key={index}
-                      variant="outline"
-                      className="w-full justify-start"
-                      asChild
-                    >
-                      <a href={action.href} target={action.href.startsWith('http') ? '_blank' : undefined}>
-                        <action.icon className="w-4 h-4 mr-2" />
-                        {action.name}
-                      </a>
-                    </Button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-0 shadow-sm mt-6">
-              <CardHeader>
-                <CardTitle>System Status</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-600">Voice Agent</span>
-                    <Badge className="bg-green-100 text-green-800">Online</Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-600">Database</span>
-                    <Badge className="bg-green-100 text-green-800">Connected</Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-600">File Storage</span>
-                    <Badge className="bg-green-100 text-green-800">Ready</Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-600">Twilio</span>
-                    <Badge className="bg-green-100 text-green-800">Active</Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
       </div>
     </div>
   );
