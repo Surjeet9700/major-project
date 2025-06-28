@@ -238,32 +238,48 @@ export class RAGService {
       .map(doc => doc.content);
       
     return relevantDocs.length > 0 ? relevantDocs : [this.getBusinessOverview(language)];
-  }  async generateRAGResponse(query: string, language: 'hi' | 'en' = 'hi'): Promise<string> {
+  }  extractEntitiesFromUserInput(input: string, language: 'hi' | 'en' = 'hi') {
+    let name = ''
+    let phone = ''
+    let date = ''
+    if (!input || typeof input !== 'string') {
+      return { name, phone, date };
+    }
+    if (language === 'hi') {
+      const nameMatch = input.match(/(?:मेरा नाम|नाम है|मैं हूं)\s*([\p{L} ]{2,40})/u);
+      if (nameMatch) name = nameMatch[1].trim();
+      const phoneMatch = input.match(/(?:\+91[\s-]*)?(\d{10})|(?:\+\d{1,3}[\s-]*)?(\d{10,15})/);
+      if (phoneMatch) phone = phoneMatch[1] || phoneMatch[2] || '';
+      const dateMatch = input.match(/(\d{1,2}[-\/\.][\d]{1,2}[-\/\.][\d]{2,4})/);
+      if (dateMatch) date = dateMatch[1];
+    } else {
+      const nameMatch = input.match(/(?:my name is|i am|this is|name is|call me|myself)\s+([a-zA-Z][a-zA-Z ]{1,39})/i);
+      if (nameMatch) name = nameMatch[1].trim();
+      const phoneMatch = input.match(/(?:\+\d{1,3}[\s-]*)?(\d{10,15})/);
+      if (phoneMatch) phone = phoneMatch[1];
+      const dateMatch = input.match(/(\d{1,2}[-\/\.][\d]{1,2}[-\/\.][\d]{2,4})/);
+      if (dateMatch) date = dateMatch[1];
+    }
+    return { name, phone, date };
+  }  async generateRAGResponse(query: string, language: 'hi' | 'en' = 'hi'): Promise<any> {
     try {
+      const entities = this.extractEntitiesFromUserInput(query, language);
       if (!config.openRouter?.apiKey) {
-        console.warn('⚠️  OpenRouter API key not found. Using fallback response.');
-        return this.getFallbackResponse(language);
+        return { response: this.getFallbackResponse(language), entities };
       }
-
       const relevantDocs = await this.searchKnowledge(query, language, 3);
-      
       const context = relevantDocs.join('\n\n');
-      
-      const systemMessage = this.getSystemMessage(language);      const userMessage = `Based on the following business information, answer the user's question in ${language === 'hi' ? 'Hindi' : 'English'} with a SHORT and CONVERSATIONAL response (maximum 2-3 sentences):
-
-Context:
-${context}
-
-User Question: ${query}
-
-Keep your response brief, friendly, and easy to understand when spoken aloud. If the question cannot be answered from the context, politely say so and suggest contacting the studio directly.`;const response = await axios.post(
+      const systemMessage = this.getSystemMessage(language);
+      const userMessage = `Based on the following business information, answer the user's question in ${language === 'hi' ? 'Hindi' : 'English'} with a SHORT and CONVERSATIONAL response (maximum 2-3 sentences):\n\nContext:\n${context}\n\nUser Question: ${query}\n\nKeep your response brief, friendly, and easy to understand when spoken aloud. If the question cannot be answered from the context, politely say so and suggest contacting the studio directly.`;
+      const response = await axios.post(
         'https://openrouter.ai/api/v1/chat/completions',
         {
           model: 'meta-llama/llama-3.2-3b-instruct:free',
           messages: [
             { role: 'system', content: systemMessage },
             { role: 'user', content: userMessage }
-          ],          max_tokens: 100, // Reduced from 200 to ensure shorter responses
+          ],
+          max_tokens: 100,
           temperature: 0.3,
         },
         {
@@ -275,11 +291,12 @@ Keep your response brief, friendly, and easy to understand when spoken aloud. If
           },
         }
       );
-
-      return response.data.choices[0]?.message?.content || this.getFallbackResponse(language);
+      return {
+        response: response.data.choices[0]?.message?.content || this.getFallbackResponse(language),
+        entities
+      };
     } catch (error) {
-      console.error('RAG response generation failed:', error);
-      return this.getFallbackResponse(language);
+      return { response: this.getFallbackResponse(language), entities: this.extractEntitiesFromUserInput(query, language) };
     }
   }  private getSystemMessage(language: 'hi' | 'en'): string {
     switch (language) {

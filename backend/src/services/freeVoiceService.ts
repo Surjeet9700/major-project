@@ -12,11 +12,38 @@ interface ConversationSession {
   bookingInProgress: boolean;
 }
 
+interface Appointment {
+  id: string
+  customerId?: string
+  customerName: string
+  customerPhone: string
+  service: string
+  date: string
+  time: string
+  status: string
+  createdAt: Date
+}
+
+interface Order {
+  id: string
+  customerId?: string
+  customerName?: string
+  customerPhone?: string
+  items?: string[]
+  status?: string
+  orderDate?: Date
+  estimatedDelivery?: Date
+  deliveryAddress?: string
+  totalAmount?: number
+  paymentStatus?: string
+  statusHistory?: { status: string; timestamp: Date; notes?: string }[]
+}
+
 class FreeVoiceService {
   private sessions: Map<string, ConversationSession> = new Map();
   private users: any[] = [];
-  private appointments: any[] = [];
-  private orders: any[] = [];
+  private appointments: Appointment[] = [];
+  private orders: Order[] = [];
   private openRouterService: OpenRouterService;
   private ragService: RAGService;
 
@@ -126,8 +153,10 @@ INSTRUCTIONS:
 - For service inquiries, provide relevant information from business config
 - Keep responses conversational, helpful, and never repetitive
 - Respond in ${session.language === 'hi' ? 'Hindi' : 'English'} only
-- Be concise (2-3 sentences max) but informative
+- Be concise (1-2 sentences max) but COMPLETE and informative
 - NEVER ask the same question twice in a row
+- ALWAYS complete your sentences and thoughts fully
+- NEVER cut off responses mid-sentence or leave incomplete thoughts
 - ALWAYS check customer data status before asking for information
 
 RESPONSE:`;
@@ -213,14 +242,14 @@ RESPONSE:`;
     
     if (lowerInput.includes("service") || lowerInput.includes("photography")) {
       return session.language === "hi" 
-        ? "हमारी services: Wedding (35 हज़ार से), Portrait (2500 से), Event (5000 से)। कौन सी चाहिए?"
-        : "Our services: Wedding (from 35k), Portrait (from 2500), Event (from 5k). Which one?";
+        ? "हमारी services: Wedding (35k से), Portrait (2.5k से), Event (5k से)। कौन सी चाहिए?"
+        : "Our services: Wedding (from 35k), Portrait (from 2.5k), Event (from 5k). Which one?";
     }
     
     if (lowerInput.includes("price") || lowerInput.includes("cost")) {
       return session.language === "hi" 
-        ? "Pricing: Wedding 35 हज़ार-1.25 लाख, Portrait 2500-4500, Event 5000-8500 रुपए।"
-        : "Pricing: Wedding 35k-1.25L, Portrait 2500-4500, Event 5000-8500 rupees.";
+        ? "Pricing: Wedding 35k-125k, Portrait 2.5k-4.5k, Event 5k-8.5k rupees।"
+        : "Pricing: Wedding 35k-125k, Portrait 2.5k-4.5k, Event 5k-8.5k rupees.";
     }
     
     // Default intelligent response
@@ -237,7 +266,7 @@ RESPONSE:`;
 
 STUDIO INFORMATION:
 - Name: ${businessConfig.name}
-- Services: Wedding Photography (₹35,000-₹1,25,000), Portrait Photography (₹2,500-₹4,500), Event Photography (₹5,000-₹8,500), Passport Photos (₹200-₹500)
+- Services: Wedding Photography (35k-125k), Portrait Photography (2.5k-4.5k), Event Photography (5k-8.5k), Passport Photos (200-500 rupees)
 - Location: ${businessConfig.location?.city || "Hyderabad"}, ${businessConfig.location?.address || "Begum Bazaar"}
 - Phone: ${businessConfig.contact?.phone?.[0] || "+91-9876543210"}
 - Email: ${businessConfig.contact?.email || "info@yuvadigitalstudio.com"}
@@ -261,16 +290,19 @@ BOOKING PROCESS:
 RESPONSE GUIDELINES:
 - Always respond in Hindi (mixing English technical terms is fine)
 - Be conversational, professional, and helpful
-- Keep responses short (2-3 sentences)
+- Keep responses SHORT (1-2 sentences max) but COMPLETE
+- NEVER cut off mid-sentence or leave responses incomplete
 - Be contextually aware of the conversation
 - Never repeat the same response
 - Handle all photography-related questions intelligently
+- Provide complete information in concise format
+- Finish every thought completely before ending response
 ` : `
 You are an intelligent AI assistant for ${businessConfig.name}, a professional photography studio. You are an expert customer service representative.
 
 STUDIO INFORMATION:
 - Name: ${businessConfig.name}
-- Services: Wedding Photography (₹35,000-₹1,25,000), Portrait Photography (₹2,500-₹4,500), Event Photography (₹5,000-₹8,500), Passport Photos (₹200-₹500)
+- Services: Wedding Photography (35k-125k), Portrait Photography (2.5k-4.5k), Event Photography (5k-8.5k), Passport Photos (200-500 rupees)
 - Location: ${businessConfig.location?.city || "Hyderabad"}, ${businessConfig.location?.address || "Begum Bazaar"}
 - Phone: ${businessConfig.contact?.phone?.[0] || "+91-9876543210"}
 - Email: ${businessConfig.contact?.email || "info@yuvadigitalstudio.com"}
@@ -294,10 +326,13 @@ BOOKING PROCESS:
 RESPONSE GUIDELINES:
 - Always respond in English
 - Be conversational, professional, and helpful
-- Keep responses short (2-3 sentences)
+- Keep responses SHORT (1-2 sentences max) but COMPLETE
+- NEVER cut off mid-sentence or leave responses incomplete
 - Be contextually aware of the conversation
 - Never repeat the same response
 - Handle all photography-related questions intelligently
+- Provide complete information in concise format
+- Finish every thought completely before ending response
 `;
 
     return systemPrompt;
@@ -489,19 +524,19 @@ RESPONSE GUIDELINES:
   }
 
   getUserAppointments(userId: string) {
-    return this.appointments.filter(apt => apt.customerId === userId);
+    return this.appointments.filter((apt: Appointment) => apt.customerId === userId);
   }
 
   getUserOrders(userId: string) {
-    return this.orders.filter(order => order.customerId === userId);
+    return this.orders.filter((order: Order) => order.customerId === userId);
   }
 
   getAppointmentById(id: string) {
-    return this.appointments.find(apt => apt.id === id);
+    return this.appointments.find((apt: Appointment) => apt.id === id);
   }
 
   getOrderById(id: string) {
-    return this.orders.find(order => order.id === id);
+    return this.orders.find((order: Order) => order.id === id);
   }
 
   getUsers() {

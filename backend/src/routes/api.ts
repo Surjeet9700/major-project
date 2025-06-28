@@ -569,60 +569,29 @@ router.get('/calls/json', asyncHandler(async (req: Request, res: Response) => {
   }
 }));
 
-// Free Voice Service Endpoints (using Hugging Face Whisper + gTTS)
+// Free Voice Service Endpoints (using Groq TTS)
 router.post('/voice/speech-to-text', asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const { freeVoiceService } = require('../services/freeVoiceService');
-    
-    if (!req.body.audioData) {
-      return res.status(400).json({ error: 'Audio data is required' });
-    }
-    
-    const audioBuffer = Buffer.from(req.body.audioData, 'base64');
-    const language = req.body.language || 'en';
-    
-    const transcription = await freeVoiceService.speechToText({
-      audioBlob: audioBuffer,
-      language
-    });
-    
-    res.json({
-      success: true,
-      transcription,
-      language
-    });
-  } catch (error) {
-    console.error('Speech to text error:', error);
-    res.status(500).json({ 
-      error: 'Failed to transcribe audio',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
+  res.status(501).json({ error: 'Speech-to-text not implemented' });
 }));
 
 router.post('/voice/text-to-speech', asyncHandler(async (req: Request, res: Response) => {
+  const { text, language = 'en' } = req.body;
+  
+  if (!text) {
+    return res.status(400).json({ error: 'Text is required' });
+  }
+  
   try {
-    const { freeVoiceService } = require('../services/freeVoiceService');
-    const { text, language = 'en' } = req.body;
-    
-    if (!text) {
-      return res.status(400).json({ error: 'Text is required' });
+    const audioBuffer = await ttsService.generateSpeech(text, language);
+    if (language === 'hi') {
+      res.setHeader('Content-Type', 'audio/wav');
+    } else {
+      res.setHeader('Content-Type', 'audio/mpeg');
     }
-    
-    const audioBuffer = await freeVoiceService.textToSpeech({
-      text,
-      language
-    });
-    
-    res.set({
-      'Content-Type': 'audio/mpeg',
-      'Content-Length': audioBuffer.length.toString(),
-      'Content-Disposition': 'attachment; filename="speech.mp3"'
-    });
-    
+    res.setHeader('Cache-Control', 'public, max-age=3600');
     res.send(audioBuffer);
   } catch (error) {
-    console.error('Text to speech error:', error);
+    console.error('Error generating TTS:', error);
     res.status(500).json({ 
       error: 'Failed to generate speech',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -764,8 +733,10 @@ router.get('/users/:userId/history', asyncHandler(async (req: Request, res: Resp
       orders,
       summary: {
         totalAppointments: appointments.length,
-        totalOrders: orders.length,        totalSpent: appointments.reduce((sum: number, apt: EnhancedAppointment) => sum + apt.paymentInfo.totalAmount, 0) +
-                   orders.reduce((sum: number, order: Order) => sum + order.pricing.total, 0)
+        totalOrders: orders.length,
+        totalSpent:
+          (Array.isArray(appointments) ? appointments.reduce((sum: number, apt: any) => sum + (apt.paymentInfo?.totalAmount || 0), 0) : 0) +
+          (Array.isArray(orders) ? orders.reduce((sum: number, order: any) => sum + (order.pricing?.total || 0), 0) : 0)
       }
     }
   });
@@ -893,17 +864,18 @@ router.get('/analytics', asyncHandler(async (req: Request, res: Response) => {
       totalUsers: users.length,
       totalAppointments: appointments.length,
       totalOrders: orders.length,
-      totalRevenue: appointments.reduce((sum: number, apt: EnhancedAppointment) => sum + apt.paymentInfo.totalAmount, 0) +
-                   orders.reduce((sum: number, order: Order) => sum + order.pricing.total, 0)
+      totalRevenue:
+        (Array.isArray(appointments) ? appointments.reduce((sum: number, apt: any) => sum + (apt.paymentInfo?.totalAmount || 0), 0) : 0) +
+        (Array.isArray(orders) ? orders.reduce((sum: number, order: any) => sum + (order.pricing?.total || 0), 0) : 0)
     },
-    appointmentsByService: appointments.reduce((acc: { [key: string]: number }, apt: EnhancedAppointment) => {
-      acc[apt.serviceId] = (acc[apt.serviceId] || 0) + 1;
+    appointmentsByService: Array.isArray(appointments) ? appointments.reduce((acc: { [key: string]: number }, apt: any) => {
+      if (apt.serviceId) acc[apt.serviceId] = (acc[apt.serviceId] || 0) + 1;
       return acc;
-    }, {}),
-    ordersByType: orders.reduce((acc: { [key: string]: number }, order: Order) => {
-      acc[order.orderType] = (acc[order.orderType] || 0) + 1;
+    }, {}) : {},
+    ordersByType: Array.isArray(orders) ? orders.reduce((acc: { [key: string]: number }, order: any) => {
+      if (order.orderType) acc[order.orderType] = (acc[order.orderType] || 0) + 1;
       return acc;
-    }, {}),
+    }, {}) : {},
     recentActivity: {
       recentAppointments: appointments.slice(-5),
       recentOrders: orders.slice(-5)

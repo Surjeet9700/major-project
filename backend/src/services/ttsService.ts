@@ -12,16 +12,14 @@ export class TTSService {
     this.groqApiKey = process.env.GROQ_API_KEY || '';
     this.groqClient = this.groqApiKey ? new Groq({ apiKey: this.groqApiKey }) : null;
   }  async generateSpeech(text: string, language: 'en' | 'hi' = 'en', voiceSettings?: { speed?: number, gender?: 'male' | 'female' }): Promise<Buffer | null> {
-    // Format text for better speech
     const formattedText = this.formatTextForSpeech(text, language);
-    
-    // Try Groq TTS first (best quality and fast)
+    if (language === 'hi') {
+      return this.generateHuggingFaceHindiTTS(formattedText);
+    }
     if (this.groqClient && language === 'en') {
       const groqResult = await this.generateGroqTTS(formattedText, voiceSettings);
       if (groqResult) return groqResult;
     }
-    
-    // Fallback to HuggingFace models
     return this.generateHuggingFaceTTS(formattedText, language, voiceSettings);
   }  private async generateGroqTTS(text: string, voiceSettings?: { speed?: number, gender?: 'male' | 'female' }): Promise<Buffer | null> {
     try {
@@ -108,6 +106,9 @@ export class TTSService {
       console.error('❌ HuggingFace TTS error:', error instanceof Error ? error.message : 'Unknown error');
       return null;
     }
+  }
+  private async generateHuggingFaceHindiTTS(text: string): Promise<Buffer | null> {
+    return null;
   }
   private formatTextForSpeech(text: string, language: 'en' | 'hi'): string {
     let formattedText = text;

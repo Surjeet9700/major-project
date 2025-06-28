@@ -4,9 +4,9 @@ import { ModernNavigation } from '@/components/modern-navigation';
 import Footer from '@/components/footer';
 import RequestCallForm from '@/components/request-call-form';
 import VoiceCallInterface from '@/components/voice-call-interface';
-import { 
-  IconCamera, 
-  IconPhone, 
+import {
+  IconCamera,
+  IconPhone,
   IconMail,
   IconMapPin,
   IconStar,
@@ -44,7 +44,7 @@ const translations = {
       browserSpeech: "Uses browser speech recognition and text-to-speech",
       simulatedFlow: "Simulated conversation flow",
       noCost: "No cost, instant experience",
-      realTwilio: "Real Twilio voice call", 
+      realTwilio: "Real Twilio voice call",
       actualAI: "Actual AI conversation processing",
       fullDemo: "Full feature demonstration"
     },
@@ -56,14 +56,14 @@ const translations = {
         features: ["Full day coverage", "Online gallery", "Professional editing", "Drone coverage"]
       },
       portrait: {
-        name: "Portrait Sessions", 
+        name: "Portrait Sessions",
         price: "₹2,500 - ₹4,500",
         duration: "1-2 hours",
         features: ["Professional lighting", "Multiple outfit changes", "Retouched images", "Print options"]
       },
       event: {
         name: "Event Photography",
-        price: "₹5,000 - ₹8,500", 
+        price: "₹5,000 - ₹8,500",
         duration: "3-5 hours",
         features: ["Event coverage", "Candid shots", "Group photos", "Quick turnaround"]
       }
@@ -101,14 +101,14 @@ const translations = {
     services: {
       wedding: {
         name: "शादी की फोटोग्राफी",
-        price: "₹35,000 - ₹1,25,000", 
+        price: "₹35,000 - ₹1,25,000",
         duration: "6-12 घंटे",
         features: ["पूरे दिन की कवरेज", "ऑनलाइन गैलरी", "पेशेवर संपादन", "ड्रोन कवरेज"]
       },
       portrait: {
         name: "पोर्ट्रेट सेशन",
         price: "₹2,500 - ₹4,500",
-        duration: "1-2 घंटे", 
+        duration: "1-2 घंटे",
         features: ["पेशेवर लाइटिंग", "कई आउटफिट चेंज", "रिटच की गई तस्वीरें", "प्रिंट विकल्प"]
       },
       event: {
@@ -121,21 +121,23 @@ const translations = {
   }
 };
 
-export default function BusinessDemo() {  const [showRequestForm, setShowRequestForm] = useState(false);
+export default function BusinessDemo() {
+  const [showRequestForm, setShowRequestForm] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'hi'>('en');
 
   const t = translations[selectedLanguage];
   const services = Object.values(t.services);
 
   return (
-    <>      <Head>
+    <>
+      <Head>
         <title>{selectedLanguage === 'hi' ? 'बिजनेस डेमो - VoxBiz AI वॉइस एजेंट | फोटोग्राफी स्टूडियो उदाहरण' : 'Business Demo - VoxBiz AI Voice Agent | Photography Studio Example'}</title>
         <meta name="description" content={selectedLanguage === 'hi' ? 'देखें कि VoxBiz AI वॉइस एजेंट फोटोग्राफी स्टूडियो के लिए वास्तविक ग्राहक बातचीत कैसे संभालता है।' : 'See how VoxBiz AI voice agent handles real customer interactions for a photography studio. Experience intelligent booking, pricing, and customer service automation.'} />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
       </Head>      <div className="min-h-screen bg-background">
         <ModernNavigation />
-        
+
         {/* Header */}
         <section className="pt-24 pb-12 bg-background">
           <div className="max-w-6xl mx-auto px-6">
@@ -143,7 +145,8 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
               <Link href="/" className="inline-flex items-center space-x-2 text-muted-foreground hover:text-foreground transition-colors">
                 <IconArrowLeft className="w-4 h-4" />
                 <span>{t.backHome}</span>
-              </Link>              {/* Language Selector */}
+              </Link>
+              {/* Language Selector */}
               <div className="flex items-center space-x-2 bg-card/50 backdrop-blur-sm border border-border rounded-lg px-4 py-2">
                 <IconLanguage className="w-4 h-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Language:</span>
@@ -152,11 +155,10 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
                     <button
                       key={lang}
                       onClick={() => setSelectedLanguage(lang)}
-                      className={`px-3 py-1.5 text-sm font-medium transition-all duration-200 rounded-sm ${
-                        selectedLanguage === lang
+                      className={`px-3 py-1.5 text-sm font-medium transition-all duration-200 rounded-sm ${selectedLanguage === lang
                           ? 'bg-primary text-primary-foreground shadow-md transform scale-105'
                           : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                      }`}
+                        }`}
                     >
                       {lang === 'en' ? 'EN' : 'हि'}
                     </button>
@@ -164,21 +166,22 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
                 </div>
               </div>
             </div>
-              <div className="text-center mb-16">
+            <div className="text-center mb-16">
               <div className="flex items-center justify-center space-x-4 mb-6">
                 <div className="inline-flex items-center px-3 py-1 bg-secondary text-secondary-foreground text-sm" style={{ borderRadius: 'var(--radius)' }}>
                   <IconCamera className="w-3 h-3 mr-2" />
                   {t.businessDemo}
-                </div>                <div className="inline-flex items-center px-3 py-1 bg-primary/10 text-primary text-sm" style={{ borderRadius: 'var(--radius)' }}>
+                </div>
+                <div className="inline-flex items-center px-3 py-1 bg-primary/10 text-primary text-sm" style={{ borderRadius: 'var(--radius)' }}>
                   <IconLanguage className="w-3 h-3 mr-2" />
                   {selectedLanguage === 'hi' ? 'हिन्दी' : 'English'}
                 </div>
               </div>
-              
+
               <h1 className="text-4xl font-bold text-foreground mb-4">
                 {t.title}
               </h1>
-              
+
               <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
                 {t.subtitle}
               </p>
@@ -194,7 +197,8 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
               <p className="text-muted-foreground max-w-2xl mx-auto">
                 {t.experienceSubtitle}
               </p>
-            </div>            <div className="grid md:grid-cols-2 gap-8">
+            </div>           
+             <div className="grid md:grid-cols-2 gap-8">
               {/* Simulated Demo */}
               <div className="flex">
                 <div className="bg-card border border-border p-6 w-full flex flex-col min-h-[600px]" style={{ borderRadius: 'var(--radius)' }}>
@@ -206,11 +210,11 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
                     <span className="bg-green-500/10 text-green-600 text-xs px-2 py-1" style={{ borderRadius: 'var(--radius)' }}>
                       {t.freeTag}
                     </span>
-                  </div>                  
+                  </div>
                   <div className="flex-1 mb-4">
                     <VoiceCallInterface language={selectedLanguage} />
                   </div>
-                  
+
                   <div className="text-xs text-muted-foreground space-y-1 pt-4 border-t border-border">
                     <p>• {t.features.browserSpeech}</p>
                     <p>• {t.features.simulatedFlow}</p>
@@ -231,13 +235,13 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
                       {t.liveTag}
                     </span>
                   </div>
-                  
+
                   <div className="flex-1 flex flex-col justify-center">
                     <div className="text-center space-y-4">
                       <div className="w-16 h-16 bg-primary/10 flex items-center justify-center mx-auto" style={{ borderRadius: 'var(--radius)' }}>
                         <IconPhone className="w-8 h-8 text-primary" />
                       </div>
-                      
+
                       <div>
                         <h4 className="font-medium text-foreground mb-2">
                           {t.getRealDemo}
@@ -246,10 +250,10 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
                           {t.getRealDemoDesc}
                         </p>
                       </div>
-                      
-                      <button 
+
+                      <button
                         onClick={() => setShowRequestForm(true)}
-                        className="bg-primary text-primary-foreground px-6 py-3 font-medium hover:opacity-90 transition-opacity w-full inline-flex items-center justify-center space-x-2" 
+                        className="bg-primary text-primary-foreground px-6 py-3 font-medium hover:opacity-90 transition-opacity w-full inline-flex items-center justify-center space-x-2"
                         style={{ borderRadius: 'var(--radius)' }}
                       >
                         <IconPhone className="w-4 h-4" />
@@ -257,7 +261,7 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
                       </button>
                     </div>
                   </div>
-                  
+
                   <div className="text-xs text-muted-foreground space-y-1 pt-4 border-t border-border">
                     <p>• {t.features.realTwilio}</p>
                     <p>• {t.features.actualAI}</p>
@@ -276,7 +280,7 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
                 <h2 className="text-2xl font-semibold text-foreground mb-6">
                   {t.businessName}
                 </h2>
-                
+
                 <div className="space-y-4 mb-8">
                   <div className="flex items-center space-x-3 text-muted-foreground">
                     <IconMapPin className="w-4 h-4" />
@@ -295,7 +299,7 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
                     <span>4.9/5 rating • 200+ reviews</span>
                   </div>
                   <div className="flex items-center space-x-3 text-muted-foreground">
-                    <IconWorld className="w-4 h-4" />                    
+                    <IconWorld className="w-4 h-4" />
                     <span>
                       {selectedLanguage === 'hi' ? 'हिंदी, अंग्रेजी' : 'Hindi, English'}
                     </span>
@@ -312,7 +316,7 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
                 <h3 className="text-xl font-semibold text-foreground mb-6">
                   {t.servicesAndPricing}
                 </h3>
-                
+
                 <div className="space-y-4">
                   {services.map((service, index) => (
                     <div key={index} className="bg-card border border-border p-4" style={{ borderRadius: 'var(--radius)' }}>
@@ -337,7 +341,8 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
               </div>
             </div>
           </div>
-        </section>        {/* CTA Section */}
+        </section>
+        {/* CTA Section */}
         <section className="py-16 bg-background">
           <div className="max-w-3xl mx-auto px-6 text-center">
             <h2 className="text-2xl font-semibold text-foreground mb-4">
@@ -347,9 +352,9 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
               {t.transformSubtitle}
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button 
+              <button
                 onClick={() => setShowRequestForm(true)}
-                className="bg-primary text-primary-foreground px-6 py-3 font-medium hover:opacity-90 transition-opacity inline-flex items-center space-x-2" 
+                className="bg-primary text-primary-foreground px-6 py-3 font-medium hover:opacity-90 transition-opacity inline-flex items-center space-x-2"
                 style={{ borderRadius: 'var(--radius)' }}
               >
                 <IconPhone className="w-4 h-4" />
@@ -366,9 +371,9 @@ export default function BusinessDemo() {  const [showRequestForm, setShowRequest
 
         <Footer />
       </div>      {showRequestForm && (
-        <RequestCallForm 
-          onClose={() => setShowRequestForm(false)} 
-          language={selectedLanguage} 
+        <RequestCallForm
+          onClose={() => setShowRequestForm(false)}
+          language={selectedLanguage}
         />
       )}
     </>

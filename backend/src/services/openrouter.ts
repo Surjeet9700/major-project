@@ -85,9 +85,10 @@ export class OpenRouterService {
         },        body: JSON.stringify({
           model: this.model,
           messages: messages,
-          max_tokens: 150, // Shorter responses for voice conversations - faster and more natural
-          temperature: 0.3,
+          max_tokens: 100, // Even shorter for faster, more concise responses
+          temperature: 0.2, // Lower temperature for more consistent, complete responses
           stream: false,
+          stop: ["\n\n", "User:", "Assistant:"], // Stop tokens to prevent incomplete responses
         }),
       });      if (response.status === 429) {
         console.warn("Rate limit hit, using intelligent fallback");
@@ -193,14 +194,19 @@ Rules:
 - Suggest practical next steps
 - Take initiative to guide the conversation toward booking or helping the customer`;
     }
-  }
-  private cleanResponse(text: string): string {
-    return text
+  }  private cleanResponse(text: string): string {
+    let cleaned = text
       .replace(/^\s*Assistant:\s*/i, "")
       .replace(/^\s*User:\s*/i, "")
-      .trim()
-      .split('\n')[0]
-      .slice(0, 120);
+      .trim();
+    const sentences = cleaned.split(/[.!?]+/);
+    if (sentences.length > 1 && sentences[sentences.length - 1].trim().length < 5) {
+      cleaned = sentences.slice(0, -1).join('.') + '.';
+    }
+    if (cleaned && !cleaned.match(/[.!?]$/)) {
+      cleaned += '.';
+    }
+    return cleaned;
   }
 
   private extractIntent(userInput: string, language: "hi" | "en"): string {
@@ -404,7 +410,7 @@ Rules:
         body: JSON.stringify({
           model: this.model,
           messages: messages,
-          max_tokens: 200,
+          max_tokens: 80,
           temperature: 0.7,
         }),
       });
@@ -445,19 +451,9 @@ Rules:
     if (language === "hi") {
       return `आप एक AI एजेंट हैं जो ${
         this.businessConfig.name
-      } के लिए काम करते हैं।
-      
-वर्तमान चरण: ${currentStep}
-उपयोगकर्ता डेटा: ${JSON.stringify(userData)}
-
-आपको उपयोगकर्ता की मदद करनी है और अगला कदम सुझाना है। हमेशा कार्रवाई-उन्मुख जवाब दें।`;
+      } के लिए काम करते हैं।\n\nवर्तमान चरण: ${currentStep}\nउपयोगकर्ता डेटा: ${JSON.stringify(userData)}\n\nआपको उपयोगकर्ता की मदद करनी है और अगला कदम सुझाना है। हमेशा एक ही, पूरी, छोटी पंक्ति में जवाब दें। कभी भी अपना उत्तर अधूरा न छोड़ें।`;
     } else {
-      return `You are an AI agent working for ${this.businessConfig.name}.
-      
-Current step: ${currentStep}
-User data: ${JSON.stringify(userData)}
-
-You need to help the user and suggest next steps. Always provide action-oriented responses.`;
+      return `You are an AI agent working for ${this.businessConfig.name}.\n\nCurrent step: ${currentStep}\nUser data: ${JSON.stringify(userData)}\n\nYou need to help the user and suggest next steps. Always reply in a single, complete, short sentence. Never cut off your answer.`;
     }
   }
   private getSuggestedActions(intent: string, language: "hi" | "en"): string[] {

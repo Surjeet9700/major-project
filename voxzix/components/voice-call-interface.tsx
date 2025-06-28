@@ -72,11 +72,11 @@ interface VoiceCallInterfaceProps {
 export default function VoiceCallInterface({ 
   language = 'en', 
   className = '' 
-}: VoiceCallInterfaceProps) {
-  const [isCallActive, setIsCallActive] = useState(false);
+}: VoiceCallInterfaceProps) {  const [isCallActive, setIsCallActive] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);  const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'hi'>(language);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'hi'>(language);
   const [sessionId, setSessionId] = useState<string>(() => 'voice-session-' + Date.now());
   const [messages, setMessages] = useState<Message[]>([]);
   const [transcript, setTranscript] = useState('');
@@ -86,6 +86,12 @@ export default function VoiceCallInterface({
   const isRecognitionActive = useRef(false);
   const isCallActiveRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Enhanced echo prevention state
+  const lastSpeechEndTime = useRef<number>(0);
+  const audioPlaybackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isSpeakingRef = useRef(false);
+  const isPlayingAudioRef = useRef(false);
   
   const t = translations[selectedLanguage];
 
@@ -108,8 +114,7 @@ export default function VoiceCallInterface({
       synthRef.current = window.speechSynthesis;
       setupSpeechRecognition();
     }
-  }, [selectedLanguage]);
-  const setupSpeechRecognition = () => {
+  }, [selectedLanguage]);  const setupSpeechRecognition = () => {
     if (typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;      
       recognitionRef.current = new SpeechRecognition();
@@ -124,9 +129,20 @@ export default function VoiceCallInterface({
         setIsListening(true);
         setLiveTranscript('');
         isRecognitionActive.current = true;
-      };      
-
-      recognitionRef.current.onresult = (event: any) => {
+      };          recognitionRef.current.onresult = (event: any) => {
+        // ENHANCED ECHO PREVENTION: Don't process if AI is speaking or just finished speaking
+        const timeSinceLastSpeech = Date.now() - lastSpeechEndTime.current;
+        if (isSpeaking || isProcessing || isSpeakingRef.current || isPlayingAudioRef.current || timeSinceLastSpeech < 1000) {
+          console.log('🚫 Ignoring speech input - AI activity detected:', {
+            isSpeaking,
+            isProcessing,
+            isSpeakingRef: isSpeakingRef.current,
+            isPlayingAudio: isPlayingAudioRef.current,
+            timeSinceLastSpeech
+          });
+          return;
+        }
+        
         let interimTranscript = '';
         let finalTranscript = '';
         
@@ -139,18 +155,71 @@ export default function VoiceCallInterface({
           }
         }
         
-        if (interimTranscript) {
+        // Enhanced filter for common AI response patterns to prevent echo
+        const aiResponsePatterns = [
+          /my name is not required/i,
+          /i'm an ai assistant/i,
+          /let's focus on/i,
+          /i just need your name/i,
+          /let's start with your name/i,
+          /how can i help you/i,
+          /welcome to yuva digital/i,
+          /what can i do for you/i,
+          /what services do you offer/i,
+          /what are your working hours/i,
+          /thank you for calling/i,
+          /photography studio/i,
+          /digital studio/i,
+          /book an appointment/i,
+          /wedding photography/i,
+          /portrait photography/i,
+          /photo session/i,
+          /ai is speaking/i,
+          /मैं एक एआई सहायक/i,
+          /नाम आवश्यक नहीं/i,
+          /युवा डिजिटल स्टूडियो/i,
+          /कैसे मदद कर सकता/i,
+          /क्या सेवाएं प्रदान/i,
+          /फोटोग्राफी/i,
+          /अपॉइंटमेंट/i,
+          /बुकिंग/i,
+          /स्टूडियो/i,
+          /सेवाएं/i,
+          /कीमत/i,
+          /समय/i
+        ];
+        
+        const isEcho = aiResponsePatterns.some(pattern => 
+          pattern.test(interimTranscript) || pattern.test(finalTranscript)
+        );
+        
+        if (isEcho) {
+          console.log('🚫 Detected potential echo, ignoring:', finalTranscript || interimTranscript);
+          return;
+        }
+        
+        // Additional check: ignore very short phrases that might be noise
+        if (finalTranscript && finalTranscript.trim().length < 3) {
+          console.log('🚫 Ignoring very short speech (likely noise):', finalTranscript);
+          return;
+        }
+        
+        if (interimTranscript && !isEcho) {
           setLiveTranscript(interimTranscript);
           console.log('🗣️ Interim speech:', interimTranscript);
         }
         
-        if (finalTranscript) {
+        if (finalTranscript && !isEcho && finalTranscript.trim().length >= 3) {
           console.log('✅ Final speech recognized:', finalTranscript);
           setLiveTranscript('');
+          // Stop recognition immediately to prevent further echo
+          if (recognitionRef.current) {
+            recognitionRef.current.stop();
+          }
           handleUserSpeech(finalTranscript);
         }
-      };
-
+      };      
+      
       recognitionRef.current.onerror = (event: any) => {
         console.error('❌ Speech recognition error:', event.error);
         setIsListening(false);
@@ -160,92 +229,92 @@ export default function VoiceCallInterface({
         if (event.error === 'not-allowed') {
           alert(t.micPermission);
         } else if (event.error === 'no-speech') {
-          console.log('No speech detected, restarting...');          setTimeout(() => {
-            if (isCallActiveRef.current && !isSpeaking && !isProcessing) {
-              startListening();
-            }
-          }, 1000);
+          console.log('No speech detected - stopping recognition to prevent loops');
+          // Do NOT auto-restart to prevent loops
+        } else {
+          console.log('Speech recognition error:', event.error, '- manual restart required');
         }
-      };      
-
-      recognitionRef.current.onend = () => {
+      };recognitionRef.current.onend = () => {
         console.log('🎤 Speech recognition ended');
         setIsListening(false);
         setLiveTranscript('');
         isRecognitionActive.current = false;
-          if (isCallActiveRef.current && !isSpeaking && !isProcessing) {
-          setTimeout(() => {
-            startListening();
-          }, 1500);
-        }
+        
+        // ENHANCED ECHO PREVENTION: Only restart if explicitly needed
+        // Do NOT automatically restart listening to prevent loops
+        console.log('🔄 Speech recognition ended - waiting for manual restart');
       };
     } else {
       console.error('Speech recognition not supported');
       alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
     }
-  };
-  const startCall = async () => {
+  };  const startCall = async () => {
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });      console.log('✅ Microphone permission granted');
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log('✅ Microphone permission granted');
     } catch (error) {
       console.error('❌ Microphone permission denied:', error);
       alert(t.micPermission);
       return;
-    }    console.log('📞 Starting call with sessionId:', sessionId);
+    }
+
+    console.log('📞 Starting call with sessionId:', sessionId);
     setIsCallActive(true);
     isCallActiveRef.current = true;
-    console.log('✅ Call state set to active');    
-    const randomGreeting = getRandomGreeting();
+    console.log('✅ Call state set to active');
+    
+    // Use consistent greeting text for both display and speech
+    const greetingText = getRandomGreeting();
     
     const initialMessage: Message = {
       id: Date.now().toString(),
       type: 'agent',
-      text: randomGreeting,
+      text: greetingText,
       timestamp: new Date()
     };
-      setMessages([initialMessage]);
     
-    // Use backend API for initial greeting (Groq TTS)
+    setMessages([initialMessage]);    
+    // Use TTS service directly for initial greeting (not browser TTS)
     setTimeout(async () => {
       try {
-        const response = await fetch('/api/voice/conversation-audio', {
+        const response = await fetch('/api/voice/text-to-speech', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            sessionId: sessionId,
-            userInput: selectedLanguage === 'hi' ? 'नमस्ते' : 'hello',
+            text: greetingText,
             language: selectedLanguage
           })
-        });        
-        
-        if (response.ok) {          
-          const result = await response.json();
-          if (result.data?.audioUrl) {
-            try {
-              await playTTSAudio(result.data.audioUrl);
-            } catch (audioError) {
-              console.warn('TTS audio failed, falling back to browser speech:', audioError);
-              speakText(randomGreeting);
-            }
+        });
+        if (response.ok) {
+          const audioBlob = await response.blob();
+          if (!audioBlob || audioBlob.size === 0) {
+            speakText(greetingText);
           } else {
-            speakText(randomGreeting);
+            const audioUrl = URL.createObjectURL(audioBlob);
+            await playTTSAudio(audioUrl, greetingText);
           }
         } else {
-          speakText(randomGreeting);
+          speakText(greetingText);
         }
       } catch (error) {
-        console.error('Error getting initial greeting:', error);
-        speakText(randomGreeting);
+        speakText(greetingText);
       }
-        setTimeout(() => {
-        console.log('🎤 Auto-starting speech recognition after greeting...');
-        startListening();
-      }, 2000); // Reduced from 3000 to 2000ms for faster interaction
-    }, 500);
-  };  const endCall = async () => {
+      setTimeout(() => {
+        if (isCallActiveRef.current && !isSpeakingRef.current && !isPlayingAudioRef.current) {
+          startListening();
+        }
+      }, 2000);
+    }, 300);
+  };const endCall = async () => {
     console.log('📞 Ending call');
+    
+    // Clear all timeouts to prevent any delayed listening restarts
+    if (audioPlaybackTimeoutRef.current) {
+      clearTimeout(audioPlaybackTimeoutRef.current);
+      audioPlaybackTimeoutRef.current = null;
+    }
     
     // Cleanup session audio files
     try {
@@ -268,26 +337,41 @@ export default function VoiceCallInterface({
     console.log('❌ Call state set to inactive');
     setIsListening(false);
     setIsSpeaking(false);
+    isSpeakingRef.current = false;
+    isPlayingAudioRef.current = false;
     setIsProcessing(false);
     setMessages([]);
     setSessionId('voice-session-' + Date.now());
     setLiveTranscript('');
+    lastSpeechEndTime.current = 0;
     
     if (recognitionRef.current && isRecognitionActive.current) {
       recognitionRef.current.stop();
     }
-    
+
     if (synthRef.current) {
       synthRef.current.cancel();
     }
-  };
-  const startListening = () => {
-    if (!recognitionRef.current || isRecognitionActive.current || isSpeaking || isProcessing) {
-      console.log('Cannot start listening:', { 
+  };const startListening = () => {
+    // ENHANCED ECHO PREVENTION: More comprehensive checks
+    const timeSinceLastSpeech = Date.now() - lastSpeechEndTime.current;
+      if (!recognitionRef.current || 
+        isRecognitionActive.current || 
+        isSpeaking || 
+        isProcessing ||
+        isSpeakingRef.current ||
+        isPlayingAudioRef.current ||
+        timeSinceLastSpeech < 1500) { // Reduced wait time for faster conversation
+      
+      console.log('🚫 Cannot start listening:', { 
         hasRecognition: !!recognitionRef.current, 
         isActive: isRecognitionActive.current,
         isSpeaking,
-        isProcessing 
+        isProcessing,
+        isSpeakingRef: isSpeakingRef.current,
+        isPlayingAudio: isPlayingAudioRef.current,
+        timeSinceLastSpeech,
+        minWaitTime: 1500
       });
       return;
     }
@@ -336,8 +420,6 @@ export default function VoiceCallInterface({
     setMessages(prev => [...prev, userMessage]);
 
     try {
-      console.log('📤 Sending request with sessionId:', sessionId);
-      
       const response = await fetch('/api/voice/conversation-audio', {
         method: 'POST',
         headers: {
@@ -348,7 +430,8 @@ export default function VoiceCallInterface({
           userInput: text,
           language: selectedLanguage
         })
-      });if (!response.ok) {
+      });
+      if (!response.ok) {
         const errorData = await response.text();
         console.error('API Error Details:', {
           status: response.status,
@@ -357,26 +440,43 @@ export default function VoiceCallInterface({
         });
         throw new Error(`API error: ${response.status} - ${errorData}`);
       }
-
       const result = await response.json();
-      
-      const agentMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'agent',
-        text: result.data?.response || result.response || 'Sorry, I couldn\'t process your request.',
-        timestamp: new Date()
-      };      
-      
-      setMessages(prev => [...prev, agentMessage]);
-        if (result.data?.audioUrl) {
-        try {
-          await playTTSAudio(result.data.audioUrl);
-        } catch (audioError) {
-          console.warn('TTS audio failed, falling back to browser speech:', audioError);
-          speakText(agentMessage.text);
+      const agentMessageText = result.data?.response || result.response || 'Sorry, I couldn\'t process your request.';
+      setMessages(prev => {
+        if (prev.length > 0 && prev[prev.length - 1].type === 'agent' && prev[prev.length - 1].text === agentMessageText) {
+          return prev;
         }
-      } else {
-        speakText(agentMessage.text);
+        return [...prev, {
+          id: (Date.now() + 1).toString(),
+          type: 'agent',
+          text: agentMessageText,
+          timestamp: new Date()
+        }];
+      });
+      try {
+        const ttsResponse = await fetch('/api/voice/text-to-speech', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: agentMessageText,
+            language: selectedLanguage
+          })
+        });
+        if (ttsResponse.ok) {
+          const audioBlob = await ttsResponse.blob();
+          if (!audioBlob || audioBlob.size === 0) {
+            speakText(agentMessageText);
+          } else {
+            const audioUrl = URL.createObjectURL(audioBlob);
+            await playTTSAudio(audioUrl, agentMessageText);
+          }
+        } else {
+          speakText(agentMessageText);
+        }
+      } catch (ttsError) {
+        speakText(agentMessageText);
       }
       
     } catch (error) {
@@ -401,55 +501,104 @@ export default function VoiceCallInterface({
   const handleSuggestionClick = (suggestion: string) => {
     if (!isCallActive || isSpeaking || isProcessing) return;
     handleUserSpeech(suggestion);
-  };
-
-  const speakText = (text: string) => {
+  };  const speakText = (text: string) => {
     if (!synthRef.current) return;
-
+    if (recognitionRef.current && isRecognitionActive.current) {
+      recognitionRef.current.stop();
+    }
+    if (audioPlaybackTimeoutRef.current) {
+      clearTimeout(audioPlaybackTimeoutRef.current);
+      audioPlaybackTimeoutRef.current = null;
+    }
     setIsSpeaking(true);
+    isSpeakingRef.current = true;
+    isPlayingAudioRef.current = true;
+    if (!synthRef.current) return;
     synthRef.current.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    const voices = synthRef.current.getVoices();
-    let selectedVoice = null;
-    
-    if (selectedLanguage === 'hi') {
-      selectedVoice = voices.find(voice => 
-        voice.lang.includes('hi') || voice.name.includes('Hindi')
-      );
+    const speak = () => {
+      if (!synthRef.current) return;
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voices = synthRef.current.getVoices();
+      let selectedVoice = null;
+      if (selectedLanguage === 'hi') {
+        selectedVoice = voices.find(voice => voice.lang.includes('hi') || voice.name.toLowerCase().includes('hindi'));
+      } else {
+        selectedVoice = voices.find(voice => voice.lang.includes('en'));
+      }
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+      utterance.rate = selectedLanguage === 'hi' ? 0.8 : 0.9;
+      utterance.pitch = 1;
+      utterance.volume = 0.8;
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        isPlayingAudioRef.current = false;
+        lastSpeechEndTime.current = Date.now();
+        if (isCallActiveRef.current) {
+          audioPlaybackTimeoutRef.current = setTimeout(() => {
+            if (!isSpeakingRef.current && !isPlayingAudioRef.current && isCallActiveRef.current) {
+              startListening();
+            }
+          }, 1500);
+        }
+      };
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        isPlayingAudioRef.current = false;
+        lastSpeechEndTime.current = Date.now();
+        if (isCallActiveRef.current) {
+          audioPlaybackTimeoutRef.current = setTimeout(() => {
+            if (!isSpeakingRef.current && !isPlayingAudioRef.current) {
+              startListening();
+            }
+          }, 1500);
+        }
+      };
+      synthRef.current.speak(utterance);
+    };
+    if (typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.getVoices().length === 0) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        speak();
+      };
+      window.speechSynthesis.getVoices();
     } else {
-      selectedVoice = voices.find(voice => voice.lang.includes('en'));
+      speak();
     }
-    
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
-    }
-    
-    utterance.rate = selectedLanguage === 'hi' ? 0.8 : 0.9;
-    utterance.pitch = 1;
-    utterance.volume = 0.8;    utterance.onend = () => {
-      setIsSpeaking(false);
-      if (isCallActiveRef.current) {
-        setTimeout(startListening, 800); // Reduced delay for faster conversation
+  };  const playTTSAudio = async (audioUrl: string, fallbackText?: string): Promise<void> => {
+    return new Promise((resolve) => {
+      if (!audioUrl || audioUrl === 'blob:null' || audioUrl.startsWith('blob:') && audioUrl.length < 20) {
+        if (fallbackText) speakText(fallbackText);
+        resolve();
+        return;
       }
-    };
-    
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      if (isCallActiveRef.current) {
-        setTimeout(startListening, 800); // Reduced delay
-      }
-    };
-    
-    synthRef.current.speak(utterance);
-  };  const playTTSAudio = async (audioUrl: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      setIsSpeaking(true);
       
-      // Use Next.js API proxy for audio files to avoid CORS issues
+      // ENHANCED ECHO PREVENTION: Stop speech recognition and set all audio states
+      if (recognitionRef.current && isRecognitionActive.current) {
+        console.log('🛑 Force stopping speech recognition before audio playback');
+        recognitionRef.current.stop();
+        isRecognitionActive.current = false;
+        setIsListening(false);
+        setLiveTranscript('');
+      }
+      
+      // Clear any existing timeouts
+      if (audioPlaybackTimeoutRef.current) {
+        clearTimeout(audioPlaybackTimeoutRef.current);
+        audioPlaybackTimeoutRef.current = null;
+      }
+      
+      setIsSpeaking(true);
+      isSpeakingRef.current = true;
+      isPlayingAudioRef.current = true;
+      
+      // Handle both blob URLs and regular URLs
       let fullAudioUrl: string;
-      if (audioUrl.startsWith('/api/audio/')) {
+      if (audioUrl.startsWith('blob:')) {
+        fullAudioUrl = audioUrl; // Use blob URL directly
+      } else if (audioUrl.startsWith('/api/audio/')) {
         // Extract filename from backend audio URL
         const filename = audioUrl.split('/').pop();
         fullAudioUrl = `/api/audio/${filename}`;
@@ -461,7 +610,7 @@ export default function VoiceCallInterface({
         fullAudioUrl = `/api/audio/${filename}`;
       }
       
-      console.log('🔊 Playing audio via Next.js proxy:', fullAudioUrl);
+      console.log('🔊 Playing audio:', fullAudioUrl.startsWith('blob:') ? 'blob URL' : fullAudioUrl);
       
       const audio = new Audio();
       
@@ -474,6 +623,11 @@ export default function VoiceCallInterface({
         audio.removeEventListener('ended', onEnded);
         audio.removeEventListener('error', onError);
         audio.removeEventListener('loadstart', onLoadStart);
+        
+        // Clean up blob URL if created locally
+        if (fullAudioUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(fullAudioUrl);
+        }
       };
       
       const onLoaded = () => {
@@ -487,26 +641,51 @@ export default function VoiceCallInterface({
           console.log('▶️ Starting audio playback');
           audio.play().catch(onError);
         }
-      };
-      
-      const onEnded = () => {
+      };        const onEnded = () => {
         console.log('🔚 Audio playback ended');
         cleanup();
+        
+        // Enhanced state cleanup for echo prevention
         setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        isPlayingAudioRef.current = false;
+        lastSpeechEndTime.current = Date.now();
+        
+        // FASTER restart for real-time conversation
         if (isCallActiveRef.current) {
-          setTimeout(startListening, 800);
+          audioPlaybackTimeoutRef.current = setTimeout(() => {
+            console.log('👂 Manually restarting listening after audio ended');
+            // Triple-check that we're ready to restart
+            if (!isSpeakingRef.current && !isPlayingAudioRef.current && isCallActiveRef.current && !isRecognitionActive.current) {
+              startListening();
+            } else {
+              console.log('🚫 Skipping restart - conditions not met:', {
+                isSpeaking: isSpeakingRef.current,
+                isPlayingAudio: isPlayingAudioRef.current,
+                isCallActive: isCallActiveRef.current,
+                isRecognitionActive: isRecognitionActive.current
+              });
+            }
+          }, 2000); // Reduced delay for faster conversation
         }
         resolve();
       };
         const onError = (error?: any) => {
         console.error('❌ Audio playback failed:', error);
         cleanup();
-        setIsSpeaking(false);
         
-        // Don't fallback to random greeting, use the actual response text
-        // that was already added to the message history
+        // Enhanced error state cleanup
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        isPlayingAudioRef.current = false;
+        lastSpeechEndTime.current = Date.now();
+        
         if (isCallActiveRef.current) {
-          setTimeout(startListening, 800);
+          audioPlaybackTimeoutRef.current = setTimeout(() => {
+            if (!isSpeakingRef.current && !isPlayingAudioRef.current) {
+              startListening();
+            }
+          }, 1500); // Faster restart on error
         }
         
         resolve();
@@ -519,7 +698,7 @@ export default function VoiceCallInterface({
             console.warn('⚠️ Audio loading timeout, falling back to browser TTS');
             onError('Audio loading timeout');
           }
-        }, 5000);
+        }, 3000); // Reduced timeout for faster fallback
       };
       
       audio.addEventListener('loadeddata', onLoaded);
@@ -532,6 +711,7 @@ export default function VoiceCallInterface({
       audio.src = fullAudioUrl;
       audio.load();
       
+      // Faster force play for real-time conversation
       setTimeout(() => {
         if (!playbackStarted) {
           console.log('🚀 Force starting audio playback');
@@ -540,7 +720,7 @@ export default function VoiceCallInterface({
             onError(err);
           });
         }
-      }, 1500);
+      }, 1000); // Reduced delay for faster audio start
     });
   };
   return (
@@ -580,13 +760,17 @@ export default function VoiceCallInterface({
             {t.clickToTalk}
           </p>
         </div>
-      ) : (        <div className="space-y-6">
+      ) : (        
+      
+      <div className="space-y-6">
           <div className="text-center">
             <div className="inline-flex items-center space-x-2 bg-secondary text-secondary-foreground px-4 py-2 rounded-full" style={{ borderRadius: 'var(--radius-xl)' }}>
               <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
               <span className="font-medium">{t.callActive}</span>
             </div>
-          </div>          <div className="bg-muted rounded-lg p-4 max-h-64 overflow-y-auto scroll-smooth" style={{ borderRadius: 'var(--radius)' }}>
+          </div>          
+          
+          <div className="bg-muted rounded-lg p-4 max-h-64 overflow-y-auto scroll-smooth" style={{ borderRadius: 'var(--radius)' }}>
             <div className="space-y-3">
               {messages.map((message) => (
                 <div
@@ -626,7 +810,8 @@ export default function VoiceCallInterface({
                     <p className="text-muted-foreground italic flex items-center">
                       <IconMicrophone className="w-4 h-4 mr-2 text-destructive animate-pulse" />
                       {t.speakNow}
-                    </p>                  </div>
+                    </p>                 
+                     </div>
                 </div>
               )}
               <div ref={messagesEndRef} />
@@ -674,7 +859,8 @@ export default function VoiceCallInterface({
             >
               <IconPhoneOff className="w-6 h-6" />
             </button>
-          </div>          <div className="text-center text-sm text-muted-foreground">
+          </div>         
+           <div className="text-center text-sm text-muted-foreground">
             {isProcessing && (
               <div className="flex items-center justify-center space-x-2">
                 <IconLoader className="w-4 h-4 animate-spin" />
