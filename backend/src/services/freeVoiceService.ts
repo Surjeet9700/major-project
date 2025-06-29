@@ -1,6 +1,7 @@
 import { OpenRouterService } from './openrouter';
 import { RAGService } from './ragService';
 import { getBusinessConfig } from '../config/business';
+import { emailService } from './emailService';
 
 interface ConversationSession {
   sessionId: string;
@@ -10,6 +11,11 @@ interface ConversationSession {
   language: "hi" | "en";
   createdAt: Date;
   bookingInProgress: boolean;
+  customerEmail?: string;
+  currentIntent?: string;
+  contextStack?: string[];
+  lastUserInput?: string;
+  conversationState?: 'greeting' | 'service_inquiry' | 'pricing_inquiry' | 'booking_start' | 'collecting_info' | 'booking_confirmation' | 'upselling' | 'closing';
 }
 
 interface Appointment {
@@ -55,8 +61,8 @@ class FreeVoiceService {
   async processConversation(
     sessionId: string,
     userInput: string,
-    language: "hi" | "en" = "hi"
-  ): Promise<string> {
+    language: "hi" | "en" = "en"
+  ): Promise<{ response: string; intent: string; visualData?: any; nextAction?: string }> {
     try {
       let session = this.sessions.get(sessionId);
 
@@ -65,38 +71,64 @@ class FreeVoiceService {
         this.sessions.set(sessionId, session);
       }
 
-      // Extract user data first
-      this.extractUserData(session, userInput);
-      console.log(`📊 After extraction - Name: ${session.extractedData.name}, Phone: ${session.extractedData.phone}, Service: ${session.extractedData.service}, Date: ${session.extractedData.date}`);
+      // Update session with current input
+      session.lastUserInput = userInput;
+      session.language = language;
 
-      // Add user input to history
+      // --- LLM-based intent and entity extraction ---
+      const llmResult = await this.openRouterService.extractIntentAndEntitiesLLM(userInput, language);
+      session.currentIntent = llmResult.intent;
+      // Merge extracted entities into session.extractedData
+      session.extractedData = { ...session.extractedData, ...llmResult.entities };
+
+      // Update conversation state
+      this.updateConversationState(session, llmResult.intent);
+
+      // Add to conversation history
       session.conversationHistory.push({
         role: "user",
         content: userInput,
+        intent: llmResult.intent,
         timestamp: new Date(),
       });
 
-      // Generate intelligent response using LLM
-      const response = await this.generateIntelligentResponse(session, userInput);
+      // --- Enhanced Natural & Sales-Focused Response Logic ---
+      let response = "";
+      try {
+        const ragResponse = await this.ragService.generateRAGResponse(userInput, language, {
+          extractedData: session.extractedData,
+          conversationHistory: session.conversationHistory
+        });
+        if (ragResponse && ragResponse.length > 20) {
+          response = this.addSalesPersonality(ragResponse, language, session);
+        } else {
+          response = await this.generateIntentBasedResponse(llmResult.intent, language, session);
+        }
+      } catch (error) {
+        console.log("RAG service error, using fallback:", error);
+        response = await this.generateIntentBasedResponse(llmResult.intent, language, session);
+      }
 
       // Add agent response to history
       session.conversationHistory.push({
-        role: "assistant", 
+        role: "assistant",
         content: response,
+        intent: llmResult.intent,
         timestamp: new Date(),
       });
 
-      console.log(`🤖 Generated response: "${response.substring(0, 100)}..."`);
-      console.log(`📊 Session data - Name: ${session.extractedData.name}, Phone: ${session.extractedData.phone}`);
-
-      // Clean response for TTS
-      return this.cleanForTTS(response);
+      return {
+        response: this.cleanForTTS(response),
+        intent: llmResult.intent,
+        visualData: this.generateVisualData(session, llmResult.intent),
+        nextAction: this.determineNextAction(session, llmResult.intent)
+      };
     } catch (error) {
       console.error("Error in processConversation:", error);
-      const fallback = language === "hi" 
+      const fallback = language === "hi"
         ? "क्षमा करें, कुछ तकनीकी समस्या है। कृपया फिर कोशिश करें।"
         : "Sorry, there's a technical issue. Please try again.";
-      return this.cleanForTTS(fallback);
+      return { response: this.cleanForTTS(fallback), intent: 'clarification' };
     }
   }
 
@@ -108,238 +140,246 @@ class FreeVoiceService {
       language,
       createdAt: new Date(),
       bookingInProgress: false,
+      conversationState: 'greeting',
+      contextStack: []
     };
   }
 
-  private async generateIntelligentResponse(session: ConversationSession, userInput: string): Promise<string> {
+  private updateConversationState(session: ConversationSession, intent: string) {
+    switch (intent) {
+      case 'service_inquiry':
+        session.conversationState = 'service_inquiry';
+        break;
+      case 'pricing_inquiry':
+        session.conversationState = 'pricing_inquiry';
+        break;
+      case 'booking_start':
+        session.conversationState = 'booking_start';
+        break;
+      case 'provide_name':
+      case 'provide_phone':
+        session.conversationState = 'collecting_info';
+        break;
+      case 'confirmation':
+        if (this.hasAllBookingInfo(session)) {
+          session.conversationState = 'booking_confirmation';
+        }
+        break;
+      default:
+        // Keep current state if no specific transition
+        break;
+    }
+  }
+
+  private hasAllBookingInfo(session: ConversationSession): boolean {
+    return !!(session.extractedData.name && session.extractedData.phone && 
+              session.extractedData.service && session.extractedData.date);
+  }
+
+  private async generateContextualResponse(session: ConversationSession, userInput: string, intent: string): Promise<{ response: string; visualData?: any; nextAction?: string }> {
     const businessConfig = getBusinessConfig();
     
     try {
-      // Build comprehensive system prompt with full business context
-      const systemPrompt = this.buildSystemPrompt(session, businessConfig);
+      // Build context-aware system prompt
+      const systemPrompt = this.buildSmartSystemPrompt(session, businessConfig);
       
       // Build conversation context
-      const conversationHistory = session.conversationHistory
-        .slice(-8) // Increased context for better responses
+      const conversationContext = session.conversationHistory
+        .slice(-6)
         .map(msg => `${msg.role}: ${msg.content}`)
         .join('\n');
 
-      // Check if all booking details are present
-      const bookingStatus = this.getBookingStatus(session);
-
-      // Create complete prompt for LLM with enhanced context
       const fullPrompt = `${systemPrompt}
 
-CONVERSATION HISTORY:
-${conversationHistory}
+CONVERSATION CONTEXT:
+${conversationContext}
 
 CURRENT USER INPUT: ${userInput}
-
-CUSTOMER DATA STATUS:
-- Name: ${session.extractedData.name || "Not provided"}
-- Phone: ${session.extractedData.phone || "Not provided"}  
-- Service Interest: ${session.extractedData.service || "Not specified"}
-- Preferred Date: ${session.extractedData.date || "Not specified"}
-- Preferred Time: ${session.extractedData.time || "Not specified"}
-
-BOOKING STATUS: ${bookingStatus}
+DETECTED INTENT: ${intent}
+CONVERSATION STATE: ${session.conversationState}
+EXTRACTED DATA: ${JSON.stringify(session.extractedData, null, 2)}
 
 INSTRUCTIONS:
-- Respond naturally and intelligently to the user's query
-- CRITICALLY IMPORTANT: Look at the conversation history to avoid repeating questions
-- If customer data shows a name/phone/service is already provided, DO NOT ask for it again
-- ${bookingStatus === 'ready_to_complete' ? 'All details collected - confirm the booking' : 'Continue the conversation naturally based on what information is still needed'}
-- If user provides name/phone/service details, acknowledge them and ask for missing information smoothly
-- For service inquiries, provide relevant information from business config
-- Keep responses conversational, helpful, and never repetitive
-- Respond in ${session.language === 'hi' ? 'Hindi' : 'English'} only
-- Be concise (1-2 sentences max) but COMPLETE and informative
-- NEVER ask the same question twice in a row
-- ALWAYS complete your sentences and thoughts fully
-- NEVER cut off responses mid-sentence or leave incomplete thoughts
-- ALWAYS check customer data status before asking for information
+- Respond naturally and contextually to the user's intent
+- Use the conversation state to guide your response
+- Don't repeat information already provided
+- Be conversational, helpful, and persuasive
+- Respond in ${session.language === 'hi' ? 'Hindi' : 'English'}
+- Keep responses concise but complete
+- Use sales techniques when appropriate
+- Handle the detected intent appropriately
 
 RESPONSE:`;
 
-      console.log(`🧠 Sending to LLM: "${userInput}" | Status: ${bookingStatus}`);
-      
-      // Build context with session information for better fallback handling
-      const sessionContext = [
-        `Session data: Name=${session.extractedData.name || 'unknown'}, Phone=${session.extractedData.phone || 'unknown'}, Service=${session.extractedData.service || 'unknown'}`,
-        `Booking status: ${bookingStatus}`,
-        ...session.conversationHistory.slice(-3).map(msg => `${msg.role}: ${msg.content}`)
-      ];
-      
-      // Use OpenRouter to generate response with session context
       const llmResponse = await this.openRouterService.generateResponse(
         fullPrompt,
         session.language,
-        sessionContext // Pass session context for intelligent fallback
+        [conversationContext, `Intent: ${intent}`, `State: ${session.conversationState}`]
       );
 
-      if (llmResponse && llmResponse.text && llmResponse.text.trim().length > 0) {
-        let response = llmResponse.text.trim();
-        
-        // Handle booking completion if user provides all details
-        if (bookingStatus === 'ready_to_complete' && !session.bookingInProgress) {
-          const bookingConfirmation = await this.completeBooking(session);
-          response += " " + bookingConfirmation;
-        }
-        
-        return response;
+      let response = llmResponse?.text?.trim() || this.getFallbackResponse(session, intent);
+      
+      // Handle booking completion
+      if (intent === 'confirmation' && this.hasAllBookingInfo(session) && session.conversationState === 'booking_confirmation') {
+        const bookingResult = await this.completeBooking(session);
+        response += " " + bookingResult;
+        return {
+          response,
+          visualData: { type: 'booking_confirmation', bookingId: session.extractedData.bookingId },
+          nextAction: 'payment_offer'
+        };
       }
 
-      // Enhanced fallback if LLM fails
-      return this.getIntelligentFallback(session, userInput, bookingStatus);
-      
+      // Generate visual data based on intent
+      const visualData = this.generateVisualData(session, intent);
+
+      return {
+        response,
+        visualData,
+        nextAction: this.determineNextAction(session, intent)
+      };
+
     } catch (error) {
-      console.error("Error generating LLM response:", error);
-      return this.getIntelligentFallback(session, userInput, this.getBookingStatus(session));
+      console.error("Error generating contextual response:", error);
+      return {
+        response: this.getFallbackResponse(session, intent),
+        visualData: null
+      };
     }
   }
 
-  private getBookingStatus(session: ConversationSession): string {
-    const { name, phone, service, date } = session.extractedData;
-    
-    if (name && phone && service && date) {
-      return 'ready_to_complete';
-    } else if (name || phone || service) {
-      return 'partial_details';
-    } else {
-      return 'initial_conversation';
-    }
-  }
+  private buildSmartSystemPrompt(session: ConversationSession, businessConfig: any): string {
+    const customerName = session.extractedData?.name || '';
+    const socialProof = session.language === "hi"
+      ? "हमारे 500+ संतुष्ट ग्राहक हैं और हमारी रेटिंग 4.9/5 है।"
+      : "We have 500+ happy customers and a 4.9/5 rating.";
 
-  private getIntelligentFallback(session: ConversationSession, userInput: string, bookingStatus: string): string {
-    const lowerInput = userInput.toLowerCase();
-    
-    // Context-aware fallbacks based on booking status
-    if (bookingStatus === 'ready_to_complete') {
-      return session.language === "hi" 
-        ? "सभी details मिल गईं। क्या मैं आपकी booking confirm करूं?"
-        : "I have all your details. Shall I confirm your booking?";
-    }
-    
-    if (bookingStatus === 'partial_details') {
-      const missing = [];
-      if (!session.extractedData.name) missing.push(session.language === "hi" ? "नाम" : "name");
-      if (!session.extractedData.phone) missing.push(session.language === "hi" ? "फोन नंबर" : "phone number");
-      if (!session.extractedData.service) missing.push(session.language === "hi" ? "service" : "service");
-      if (!session.extractedData.date) missing.push(session.language === "hi" ? "date" : "date");
-      
-      const missingText = missing.join(session.language === "hi" ? " और " : " and ");
-      return session.language === "hi" 
-        ? `बस ${missingText} चाहिए booking के लिए।`
-        : `I just need your ${missingText} to complete the booking.`;
-    }
-    
-    // Service-based intelligent responses
-    if (lowerInput.includes("book") || lowerInput.includes("appointment")) {
-      return session.language === "hi" 
-        ? "बुकिंग के लिए नाम, फोन नंबर और कौन सी service चाहिए - बताएं।"
-        : "For booking, I need your name, phone number, and which service you want.";
-    }
-    
-    if (lowerInput.includes("service") || lowerInput.includes("photography")) {
-      return session.language === "hi" 
-        ? "हमारी services: Wedding (35k से), Portrait (2.5k से), Event (5k से)। कौन सी चाहिए?"
-        : "Our services: Wedding (from 35k), Portrait (from 2.5k), Event (from 5k). Which one?";
-    }
-    
-    if (lowerInput.includes("price") || lowerInput.includes("cost")) {
-      return session.language === "hi" 
-        ? "Pricing: Wedding 35k-125k, Portrait 2.5k-4.5k, Event 5k-8.5k rupees।"
-        : "Pricing: Wedding 35k-125k, Portrait 2.5k-4.5k, Event 5k-8.5k rupees.";
-    }
-    
-    // Default intelligent response
-    return session.language === "hi" 
-      ? "मैं Yuva Digital Studio से हूँ। Photography services या booking के लिए पूछें।"
-      : "I'm from Yuva Digital Studio. Ask about photography services or booking.";
-  }
+    return session.language === "hi" ? `
+आप युवा डिजिटल स्टूडियो के स्मार्ट AI वॉइस एजेंट हैं।
 
-  private buildSystemPrompt(session: ConversationSession, businessConfig: any): string {
-    const services = businessConfig.services?.map((s: any) => s.name).join(", ") || "Wedding Photography, Portrait Photography, Event Photography";
-    
-    const systemPrompt = session.language === "hi" ? `
-आप ${businessConfig.name} के लिए एक intelligent AI assistant हैं। आप एक professional photography studio के expert customer service representative हैं।
+सेवाएं और कीमतें:
+- शादी की फोटोग्राफी: ₹35,000 - ₹1,25,000 (6-12 घंटे)
+- पोर्ट्रेट सेशन: ₹2,500 - ₹4,500 (1-2 घंटे)  
+- इवेंट फोटोग्राफी: ₹5,000 - ₹8,500 (3-5 घंटे)
+- पासपोर्ट फोटो: ₹200 - ₹500
 
-STUDIO INFORMATION:
-- Name: ${businessConfig.name}
-- Services: Wedding Photography (35k-125k), Portrait Photography (2.5k-4.5k), Event Photography (5k-8.5k), Passport Photos (200-500 rupees)
-- Location: ${businessConfig.location?.city || "Hyderabad"}, ${businessConfig.location?.address || "Begum Bazaar"}
-- Phone: ${businessConfig.contact?.phone?.[0] || "+91-9876543210"}
-- Email: ${businessConfig.contact?.email || "info@yuvadigitalstudio.com"}
-- Working Hours: Monday-Saturday 9 AM to 6 PM, Sunday closed
-- Experience: 10+ years, 500+ events completed
+${socialProof}
 
-CAPABILITIES:
-1. Handle service inquiries intelligently
-2. Provide pricing and package information
-3. Manage appointment bookings step-by-step
-4. Answer questions about studio, location, hours
-5. Handle multiple photographers, equipment questions
-6. Provide expert photography advice
-
-BOOKING PROCESS:
-- When customer wants to book, collect: Name → Phone → Service → Date → Time
-- Be smart about collecting information - don't repeat questions if already provided
-- Guide the conversation naturally
-- Confirm booking when all details are collected
-
-RESPONSE GUIDELINES:
-- Always respond in Hindi (mixing English technical terms is fine)
-- Be conversational, professional, and helpful
-- Keep responses SHORT (1-2 sentences max) but COMPLETE
-- NEVER cut off mid-sentence or leave responses incomplete
-- Be contextually aware of the conversation
-- Never repeat the same response
-- Handle all photography-related questions intelligently
-- Provide complete information in concise format
-- Finish every thought completely before ending response
+महत्वपूर्ण निर्देश:
+- ग्राहक के नाम का उपयोग करें (${customerName ? customerName : 'नाम नहीं दिया गया'})
+- संदर्भ को समझें और उचित प्रतिक्रिया दें
+- पहले से दी गई जानकारी को दोहराएं नहीं
+- प्राकृतिक और मददगार बातचीत करें
+- बिक्री तकनीकों का उपयोग करें
+- बुकिंग पूरी होने पर भुगतान और कैलेंडर की पेशकश करें
 ` : `
-You are an intelligent AI assistant for ${businessConfig.name}, a professional photography studio. You are an expert customer service representative.
+You are the smart AI voice agent for Yuva Digital Studio.
 
-STUDIO INFORMATION:
-- Name: ${businessConfig.name}
-- Services: Wedding Photography (35k-125k), Portrait Photography (2.5k-4.5k), Event Photography (5k-8.5k), Passport Photos (200-500 rupees)
-- Location: ${businessConfig.location?.city || "Hyderabad"}, ${businessConfig.location?.address || "Begum Bazaar"}
-- Phone: ${businessConfig.contact?.phone?.[0] || "+91-9876543210"}
-- Email: ${businessConfig.contact?.email || "info@yuvadigitalstudio.com"}
-- Working Hours: Monday-Saturday 9 AM to 6 PM, Sunday closed
-- Experience: 10+ years, 500+ events completed
+Services and Pricing:
+- Wedding Photography: ₹35,000 - ₹1,25,000 (6-12 hours)
+- Portrait Sessions: ₹2,500 - ₹4,500 (1-2 hours)
+- Event Photography: ₹5,000 - ₹8,500 (3-5 hours)
+- Passport Photos: ₹200 - ₹500
 
-CAPABILITIES:
-1. Handle service inquiries intelligently
-2. Provide pricing and package information
-3. Manage appointment bookings step-by-step
-4. Answer questions about studio, location, hours
-5. Handle multiple photographers, equipment questions
-6. Provide expert photography advice
+${socialProof}
 
-BOOKING PROCESS:
-- When customer wants to book, collect: Name → Phone → Service → Date → Time
-- Be smart about collecting information - don't repeat questions if already provided
-- Guide the conversation naturally
-- Confirm booking when all details are collected
-
-RESPONSE GUIDELINES:
-- Always respond in English
-- Be conversational, professional, and helpful
-- Keep responses SHORT (1-2 sentences max) but COMPLETE
-- NEVER cut off mid-sentence or leave responses incomplete
-- Be contextually aware of the conversation
-- Never repeat the same response
-- Handle all photography-related questions intelligently
-- Provide complete information in concise format
-- Finish every thought completely before ending response
+Important Instructions:
+- Use customer's name (${customerName ? customerName : 'name not provided'})
+- Understand context and provide appropriate responses
+- Don't repeat information already provided
+- Keep conversation natural and helpful
+- Use sales techniques when appropriate
+- Offer payment and calendar after booking completion
 `;
-
-    return systemPrompt;
   }
 
-  private shouldCompleteBooking(session: ConversationSession): boolean {
-    return this.getBookingStatus(session) === 'ready_to_complete' && !session.bookingInProgress;
+  private generateVisualData(session: ConversationSession, intent: string): any {
+    switch (intent) {
+      case 'service_inquiry':
+        return {
+          type: 'services_display',
+          services: [
+            { name: 'Wedding Photography', price: '₹35,000 - ₹1,25,000', duration: '6-12 hours' },
+            { name: 'Portrait Sessions', price: '₹2,500 - ₹4,500', duration: '1-2 hours' },
+            { name: 'Event Photography', price: '₹5,000 - ₹8,500', duration: '3-5 hours' },
+            { name: 'Passport Photos', price: '₹200 - ₹500', duration: '15-30 mins' }
+          ]
+        };
+      case 'pricing_inquiry':
+        return {
+          type: 'pricing_display',
+          service: session.extractedData.service || 'all',
+          pricing: {
+            wedding: { range: '₹35,000 - ₹1,25,000', features: ['Full day coverage', 'Online gallery', 'Professional editing'] },
+            portrait: { range: '₹2,500 - ₹4,500', features: ['Professional lighting', 'Multiple outfits', 'Retouched images'] },
+            event: { range: '₹5,000 - ₹8,500', features: ['Event coverage', 'Candid shots', 'Quick turnaround'] }
+          }
+        };
+      case 'booking_start':
+        return {
+          type: 'booking_form',
+          fields: ['name', 'phone', 'service', 'date', 'time'],
+          completed: Object.keys(session.extractedData).filter(key => session.extractedData[key])
+        };
+      default:
+        return null;
+    }
+  }
+
+  private determineNextAction(session: ConversationSession, intent: string): string {
+    switch (intent) {
+      case 'service_inquiry':
+        return 'show_services';
+      case 'pricing_inquiry':
+        return 'show_pricing';
+      case 'booking_start':
+        return 'collect_info';
+      case 'confirmation':
+        if (this.hasAllBookingInfo(session)) {
+          return 'complete_booking';
+        }
+        return 'collect_missing_info';
+      default:
+        return 'continue_conversation';
+    }
+  }
+
+  private getFallbackResponse(session: ConversationSession, intent: string): string {
+    const responses = {
+      service_inquiry: session.language === "hi" 
+        ? "हम शादी की फोटोग्राफी, पोर्ट्रेट सेशन, इवेंट फोटोग्राफी और पासपोर्ट फोटो की सेवाएं देते हैं। कौन सी सेवा में आपकी रुचि है?"
+        : "We offer wedding photography, portrait sessions, event photography, and passport photos. Which service interests you?",
+      pricing_inquiry: session.language === "hi"
+        ? "हमारी कीमतें सेवा के अनुसार अलग-अलग हैं। कौन सी सेवा के बारे में जानना चाहते हैं?"
+        : "Our prices vary by service. Which service would you like to know about?",
+      booking_start: session.language === "hi"
+        ? "बुकिंग के लिए कृपया अपना नाम और फोन नंबर बताएं।"
+        : "For booking, please provide your name and phone number.",
+      default: session.language === "hi"
+        ? "कृपया और जानकारी दें।"
+        : "Please provide more information."
+    };
+
+    return responses[intent as keyof typeof responses] || responses.default;
+  }
+
+  // Integration stubs
+  private offerPaymentLink(bookingId: string) {
+    console.log(`[STUB] Offer payment link for booking: ${bookingId}`);
+    return `https://payment.example.com/pay/${bookingId}`;
+  }
+
+  private offerCalendarInvite(appointment: Appointment) {
+    console.log(`[STUB] Offer calendar invite for appointment:`, appointment);
+    return `Calendar invite would be sent for ${appointment.date} at ${appointment.time}`;
+  }
+
+  private logToCRM(appointment: Appointment) {
+    console.log(`[STUB] Log appointment to CRM:`, appointment);
+  }
+
+  private trackAnalytics(event: string, data: any) {
+    console.log(`[STUB] Track analytics event: ${event}`, data);
   }
 
   private async completeBooking(session: ConversationSession): Promise<string> {
@@ -357,140 +397,43 @@ RESPONSE GUIDELINES:
     };
 
     this.appointments.push(appointment);
+    session.extractedData.bookingId = appointment.id;
+    
+    this.logToCRM(appointment);
+    this.trackAnalytics('booking_completed', appointment);
     console.log('📅 Booking completed:', appointment);
 
-    const confirmationMessage = session.language === "hi" 
-      ? `बुकिंग कन्फर्म! ID: ${appointment.id}। हम आपको कॉल करके time confirm करेंगे। धन्यवाद!`
-      : `Booking confirmed! ID: ${appointment.id}. We'll call you to confirm the timing. Thank you!`;
+    // Send email confirmation
+    if (session.customerEmail) {
+      try {
+        const emailResult = await emailService.sendBookingConfirmation({
+          customerName: session.extractedData.name,
+          customerEmail: session.customerEmail,
+          customerPhone: session.extractedData.phone,
+          service: session.extractedData.service,
+          date: session.extractedData.date,
+          time: session.extractedData.time || "To be confirmed",
+          bookingId: appointment.id,
+          language: session.language
+        });
 
-    return confirmationMessage;
-  }
-
-
-
-  private extractUserData(session: ConversationSession, input: string): void {
-    const lowerInput = input.toLowerCase();
-
-    // Extract phone number with improved patterns
-    if (!session.extractedData.phone) { // Only extract if not already present
-      const phonePatterns = [
-        /(?:phone|number|contact|mobile).*?(\+?91[\s-]?\d{10})/i,
-        /(?:phone|number|contact|mobile).*?(\d{10})/i,
-        /(\+?91[\s-]?\d{10})/,
-        /(\d{10})/,
-        /(\d{5}[\s-]*\d{5})/,
-        /(\d{4}[\s-]*\d{6})/,
-      ];
-
-      for (const pattern of phonePatterns) {
-        const phoneMatch = input.match(pattern);
-        if (phoneMatch) {
-          const phoneDigits = phoneMatch[0].replace(/[^\d]/g, "");
-          if (phoneDigits.length >= 10) {
-            session.extractedData.phone = phoneDigits.slice(-10);
-            console.log('📞 Extracted phone:', session.extractedData.phone);
-            break;
-          }
+        if (emailResult.success) {
+          console.log('📧 Email confirmation sent successfully');
+        } else {
+          console.error('📧 Failed to send email confirmation:', emailResult.error);
         }
+      } catch (error) {
+        console.error('📧 Error sending email confirmation:', error);
       }
     }
 
-    // Enhanced name extraction with better filtering
-    if (!session.extractedData.name) { // Only extract if not already present
-      const namePatterns = [
-        /(?:my name is|i am|name is|call me|myself)\s+([a-zA-Z]+(?:\s[a-zA-Z]+){0,2})(?:\s+and|\s+my|\s+mobile|\s+phone|\s+number|\s+from|\s+want|\s+need|\s+for|\.|\,|$)/i,
-        /(?:मेरा नाम|नाम है|मैं हूं)\s+([a-zA-Z]+(?:\s[a-zA-Z]+){0,2})(?:\s+और|\s+मेरा|\s+है|\s+से|\s+चाहिए|\.|\,|$)/i,
-        /(?:this is|speaking)\s+([a-zA-Z]+(?:\s[a-zA-Z]+){0,2})(?:\s+and|\s+my|\s+from|\s+calling|\.|\,|$)/i,
-        // Additional pattern for simple single word names
-        /^([A-Z][a-z]{2,15})$/, // Matches capitalized single words like "Rohit"
-        /^\s*([A-Z][a-z]{2,15})\s*$/, // With optional whitespace
-      ];
+    // Offer payment and calendar
+    const paymentLink = this.offerPaymentLink(appointment.id);
+    const calendarInvite = this.offerCalendarInvite(appointment);
 
-      // Words to exclude from name extraction (common non-name words)
-      const excludeWords = [
-        'interested', 'booking', 'service', 'photography', 'wedding', 'portrait', 'event',
-        'want', 'need', 'like', 'from', 'studio', 'photographer', 'camera', 'photo',
-        'picture', 'shoot', 'session', 'package', 'price', 'cost', 'today', 'tomorrow',
-        'calling', 'looking', 'planning', 'getting', 'having', 'doing', 'going',
-        'thanks', 'thank', 'yes', 'okay', 'sure', 'fine', 'good', 'great', 'hello', 'hi',
-        'रुचि', 'बुकिंग', 'सेवा', 'फोटोग्राफी', 'शादी', 'चाहिए', 'स्टूडियो', 'फोन'
-      ];
-
-      for (const pattern of namePatterns) {
-        const nameMatch = input.match(pattern);
-        if (nameMatch && nameMatch[1]) {
-          const name = nameMatch[1].trim();
-          const nameWords = name.split(/\s+/);
-          
-          // Check if the extracted text contains excluded words
-          const hasExcludedWords = nameWords.some(word => 
-            excludeWords.includes(word.toLowerCase())
-          );
-          
-          // Validate name: proper length, only letters and spaces, no excluded words
-          if (name.length >= 2 && name.length <= 40 && 
-              /^[a-zA-Z\s]+$/.test(name) && 
-              !hasExcludedWords &&
-              nameWords.length <= 4 && // Max 4 words for a name
-              nameWords.every(word => word.length >= 2)) { // Each word at least 2 chars
-            session.extractedData.name = name;
-            console.log('👤 Extracted name:', name);
-            break;
-          } else {
-            console.log('👤 Rejected potential name:', name, 'Reason: validation failed');
-          }
-        }
-      }
-    }
-
-    // Extract service type with more variations
-    if (!session.extractedData.service) { // Only extract if not already present
-      if (lowerInput.includes("wedding") || lowerInput.includes("शादी") || lowerInput.includes("marriage") || lowerInput.includes("विवाह")) {
-        session.extractedData.service = "wedding";
-        console.log('💒 Extracted service: wedding');
-      } else if (lowerInput.includes("portrait") || lowerInput.includes("पोर्ट्रेट") || lowerInput.includes("individual") || lowerInput.includes("personal")) {
-        session.extractedData.service = "portrait";
-        console.log('🖼️ Extracted service: portrait');
-      } else if (lowerInput.includes("event") || lowerInput.includes("birthday") || lowerInput.includes("party") || 
-                 lowerInput.includes("function") || lowerInput.includes("celebration") || lowerInput.includes("इवेंट")) {
-        session.extractedData.service = "event";
-        console.log('🎉 Extracted service: event');
-      } else if (lowerInput.includes("passport") || lowerInput.includes("पासपोर्ट") || lowerInput.includes("id photo")) {
-        session.extractedData.service = "passport";
-        console.log('📷 Extracted service: passport');
-      }
-    }
-
-    // Extract date with more variations
-    if (!session.extractedData.date) { // Only extract if not already present
-      if (lowerInput.includes("tomorrow") || lowerInput.includes("कल")) {
-        session.extractedData.date = "tomorrow";
-        console.log('📅 Extracted date: tomorrow');
-      } else if (lowerInput.includes("day after tomorrow") || lowerInput.includes("परसों")) {
-        session.extractedData.date = "day after tomorrow";
-        console.log('📅 Extracted date: day after tomorrow');
-      } else if (lowerInput.includes("today") || lowerInput.includes("आज")) {
-        session.extractedData.date = "today";
-        console.log('📅 Extracted date: today');
-      } else if (lowerInput.includes("next week") || lowerInput.includes("अगले हफ्ते")) {
-        session.extractedData.date = "next week";
-        console.log('📅 Extracted date: next week');
-      }
-    }
-
-    // Extract time preferences
-    if (!session.extractedData.time) { // Only extract if not already present
-      if (lowerInput.includes("morning") || lowerInput.includes("सुबह")) {
-        session.extractedData.time = "morning";
-        console.log('⏰ Extracted time: morning');
-      } else if (lowerInput.includes("afternoon") || lowerInput.includes("दोपहर")) {
-        session.extractedData.time = "afternoon";
-        console.log('⏰ Extracted time: afternoon');
-      } else if (lowerInput.includes("evening") || lowerInput.includes("शाम")) {
-        session.extractedData.time = "evening";
-        console.log('⏰ Extracted time: evening');
-      }
-    }
+    return session.language === "hi" 
+      ? `बुकिंग कन्फर्म! ID: ${appointment.id}। सेवा: ${appointment.service}, नाम: ${appointment.customerName}, फोन: ${appointment.customerPhone}, दिनांक: ${appointment.date}, समय: ${appointment.time}।\n${calendarInvite}\nभुगतान लिंक: ${paymentLink}। हम आपको कॉल करके time confirm करेंगे। धन्यवाद!`
+      : `Booking confirmed! ID: ${appointment.id}. Service: ${appointment.service}, Name: ${appointment.customerName}, Phone: ${appointment.customerPhone}, Date: ${appointment.date}, Time: ${appointment.time}.\n${calendarInvite}\nPayment link: ${paymentLink}. We'll call you to confirm the timing. Thank you!`;
   }
 
   private cleanForTTS(text: string): string {
@@ -509,6 +452,19 @@ RESPONSE GUIDELINES:
   // Session management
   getSession(sessionId: string) {
     return this.sessions.get(sessionId);
+  }
+
+  setSessionEmail(sessionId: string, email: string): void {
+    let session = this.sessions.get(sessionId);
+    
+    if (!session) {
+      session = this.createNewSession(sessionId, 'en');
+      this.sessions.set(sessionId, session);
+      console.log('📧 Created new session for email setting:', sessionId);
+    }
+    
+    session.customerEmail = email;
+    console.log('📧 Email set for session:', { sessionId, email });
   }
 
   deleteSession(sessionId: string): void {
@@ -542,6 +498,125 @@ RESPONSE GUIDELINES:
   getUsers() {
     return this.users;
   }
+
+  private async generateIntentBasedResponse(intent: string, language: "hi" | "en", session: ConversationSession): Promise<string> {
+    const customerName = session.extractedData?.name || '';
+    const nameGreeting = customerName ? (language === "hi" ? `${customerName} जी, ` : `${customerName}, `) : '';
+    
+    switch (intent) {
+      case 'greeting':
+        return language === "hi" 
+          ? `${nameGreeting}नमस्ते! मैं युवा डिजिटल स्टूडियो का AI सहायक हूँ। आज आपकी कैसे मदद कर सकता हूँ? क्या आप फोटोग्राफी सेवाओं के बारे में जानना चाहते हैं या कोई बुकिंग करना चाहते हैं?`
+          : `${nameGreeting}Hello! I'm the AI assistant for Yuva Digital Studio. How can I help you today? Would you like to know about our photography services or make a booking?`;
+      
+      case 'business_info':
+        return language === "hi" 
+          ? `${nameGreeting}हम युवा डिजिटल स्टूडियो हैं, हैदराबाद का सबसे विश्वसनीय फोटोग्राफी स्टूडियो। पिछले 5 सालों में हमने 500+ संतुष्ट ग्राहकों की यादें सहेजी हैं। हम शादी, पोर्ट्रेट, इवेंट और पासपोर्ट फोटो सेवाएं प्रदान करते हैं। क्या आप किसी विशेष सेवा के बारे में जानना चाहते हैं?`
+          : `${nameGreeting}We are Yuva Digital Studio, Hyderabad's most trusted photography studio. Over the past 5 years, we've captured memories for 500+ satisfied customers. We offer wedding, portrait, event, and passport photo services. Would you like to know about any specific service?`;
+      
+      case 'services':
+        return language === "hi" 
+          ? `${nameGreeting}हमारी प्रमुख सेवाएं हैं: शादी की फोटोग्राफी (₹35,000-₹1,25,000), पोर्ट्रेट सेशन (₹2,500-₹4,500), इवेंट फोटोग्राफी (₹5,000-₹8,500), और पासपोर्ट फोटो (₹200-₹500)। सभी पैकेज में प्रोफेशनल एडिटिंग और ऑनलाइन गैलरी शामिल है। कौन सी सेवा आपको सबसे अच्छी लगती है?`
+          : `${nameGreeting}Our main services are: Wedding photography (₹35,000-₹1,25,000), Portrait sessions (₹2,500-₹4,500), Event photography (₹5,000-₹8,500), and Passport photos (₹200-₹500). All packages include professional editing and online gallery. Which service interests you most?`;
+      
+      case 'pricing':
+        return language === "hi" 
+          ? `${nameGreeting}हमारी कीमतें बहुत प्रतिस्पर्धी हैं! शादी की फोटोग्राफी ₹35,000 से शुरू होती है, पोर्ट्रेट ₹2,500 से, और इवेंट ₹5,000 से। अभी बुकिंग करने पर 10% की छूट भी मिलेगी। क्या आप किसी विशेष पैकेज के बारे में जानना चाहते हैं?`
+          : `${nameGreeting}Our prices are very competitive! Wedding photography starts from ₹35,000, portraits from ₹2,500, and events from ₹5,000. You'll also get a 10% discount for booking now. Would you like to know about any specific package?`;
+      
+      case 'hours':
+        return language === "hi" 
+          ? `${nameGreeting}हमारे स्टूडियो सुबह 10 बजे से रात 8 बजे तक खुले रहते हैं, सप्ताह के सभी दिन। आप कभी भी आ सकते हैं या ऑनलाइन बुकिंग कर सकते हैं। क्या आप आज या कल आना चाहते हैं?`
+          : `${nameGreeting}Our studio is open from 10am to 8pm, all days of the week. You can visit anytime or book online. Would you like to come today or tomorrow?`;
+      
+      case 'location':
+        return language === "hi" 
+          ? `${nameGreeting}हमारा स्टूडियो हैदराबाद के मुख्य क्षेत्र में स्थित है। पता है: युवा डिजिटल स्टूडियो, हैदराबाद, तेलंगाना। गूगल मैप्स पर 'Yuva Digital Studio Hyderabad' खोजें। पार्किंग भी उपलब्ध है। क्या आप दिशा-निर्देश चाहते हैं?`
+          : `${nameGreeting}Our studio is located in the main area of Hyderabad. Address: Yuva Digital Studio, Hyderabad, Telangana. Search 'Yuva Digital Studio Hyderabad' on Google Maps. Parking is also available. Do you need directions?`;
+      
+      case 'contact':
+        return language === "hi" 
+          ? `${nameGreeting}हमसे संपर्क करने के लिए: फोन +91-9876543210, ईमेल info@yuvadigitalstudio.com। व्हाट्सऐप पर भी मैसेज कर सकते हैं। क्या आप अभी कॉल करना चाहते हैं या मैं आपको कॉलबैक दे सकता हूँ?`
+          : `${nameGreeting}To contact us: Phone +91-9876543210, Email info@yuvadigitalstudio.com. You can also message us on WhatsApp. Would you like to call now or should I give you a callback?`;
+      
+      case 'help':
+        return language === "hi" 
+          ? `${nameGreeting}मैं आपकी पूरी मदद के लिए यहाँ हूँ! आप बुकिंग, सेवाओं, कीमतों, समय, स्थान या किसी अन्य जानकारी के लिए पूछ सकते हैं। क्या आप किसी विशेष चीज़ के बारे में जानना चाहते हैं?`
+          : `${nameGreeting}I'm here to help you completely! You can ask about bookings, services, pricing, timing, location, or any other information. Is there something specific you'd like to know about?`;
+      
+      case 'clarification':
+        return language === "hi" 
+          ? `${nameGreeting}माफ़ कीजिए, मैं आपकी बात पूरी तरह नहीं समझ पाया। क्या आप बुकिंग करना चाहते हैं, सेवाओं के बारे में जानना चाहते हैं, या कुछ और? कृपया थोड़ा और स्पष्ट करें।`
+          : `${nameGreeting}Sorry, I didn't fully understand. Do you want to make a booking, know about services, or something else? Please clarify a bit more.`;
+      
+      case 'booking':
+      case 'booking_continue':
+      case 'booking_service':
+      case 'service_specific':
+        return await this.handleBookingFlow(session, language);
+      
+      default:
+        return language === "hi" 
+          ? `${nameGreeting}माफ़ कीजिए, कृपया अपना प्रश्न स्पष्ट करें। मैं आपकी मदद करने के लिए यहाँ हूँ!`
+          : `${nameGreeting}Sorry, could you please clarify your question. I'm here to help you!`;
+    }
+  }
+
+  private async handleBookingFlow(session: ConversationSession, language: "hi" | "en"): Promise<string> {
+    const customerName = session.extractedData?.name || '';
+    const nameGreeting = customerName ? (language === "hi" ? `${customerName} जी, ` : `${customerName}, `) : '';
+    
+    if (!session.extractedData.name) {
+      return language === "hi" 
+        ? `${nameGreeting}बुकिंग के लिए कृपया अपना नाम बताएं। मैं आपकी बुकिंग को आसान बनाने में मदद करूंगा।`
+        : `${nameGreeting}For booking, please tell me your name. I'll help make your booking process smooth.`;
+    } else if (!session.extractedData.phone) {
+      return language === "hi" 
+        ? `${nameGreeting}अब कृपया अपना मोबाइल नंबर बताएं। मैं आपको बुकिंग कन्फर्मेशन और रिमाइंडर भेजूंगा।`
+        : `${nameGreeting}Now please provide your mobile number. I'll send you booking confirmation and reminders.`;
+    } else if (!session.extractedData.service) {
+      return language === "hi" 
+        ? `${nameGreeting}कौन सी सेवा चाहिए? हमारे पास शादी की फोटोग्राफी, पोर्ट्रेट सेशन, और इवेंट फोटोग्राफी हैं। सभी में प्रोफेशनल एडिटिंग शामिल है।`
+        : `${nameGreeting}Which service do you need? We have wedding photography, portrait sessions, and event photography. All include professional editing.`;
+    } else if (!session.extractedData.date) {
+      return language === "hi" 
+        ? `${nameGreeting}कौन सी तारीख चाहिए? हमारे पास अगले महीने तक की उपलब्धता है। जल्दी बुकिंग करने पर बेहतर समय स्लॉट मिलेगा।`
+        : `${nameGreeting}Which date do you prefer? We have availability until next month. Early booking gets better time slots.`;
+    } else if (!session.extractedData.time) {
+      return language === "hi" 
+        ? `${nameGreeting}कौन सा समय सुविधाजनक होगा? हम सुबह 10 बजे से शाम 6 बजे तक सेशन करते हैं।`
+        : `${nameGreeting}What time would be convenient? We conduct sessions from 10am to 6pm.`;
+    } else {
+      // All info present, confirm booking
+      return await this.completeBooking(session);
+    }
+  }
+
+  private addSalesPersonality(response: string, language: "hi" | "en", session: ConversationSession): string {
+    const customerName = session.extractedData?.name || '';
+    const nameGreeting = customerName ? (language === "hi" ? `${customerName} जी, ` : `${customerName}, `) : '';
+    
+    // Add sales elements to the response
+    const salesElements = language === "hi" 
+      ? [
+          "अभी बुकिंग करने पर 10% की छूट मिलेगी।",
+          "हमारे 500+ संतुष्ट ग्राहक हैं।",
+          "प्रोफेशनल क्वालिटी की गारंटी।",
+          "क्या आप बुकिंग करना चाहते हैं?"
+        ]
+      : [
+          "You'll get a 10% discount for booking now.",
+          "We have 500+ satisfied customers.",
+          "Guaranteed professional quality.",
+          "Would you like to make a booking?"
+        ];
+    
+    // Randomly add one sales element
+    const randomElement = salesElements[Math.floor(Math.random() * salesElements.length)];
+    
+    return `${nameGreeting}${response} ${randomElement}`;
+  }
 }
 
 export { FreeVoiceService };
+export const freeVoiceService = new FreeVoiceService();

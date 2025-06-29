@@ -1,4 +1,3 @@
-import { ChromaClient } from 'chromadb';
 import { HfInference } from '@huggingface/inference';
 import axios from 'axios';
 import { getBusinessConfig } from '../config/business';
@@ -16,96 +15,16 @@ interface RAGDocument {
 
 export class RAGService {
   private hf: HfInference | null = null;
-  private chromaClient: ChromaClient;
-  private collectionName = 'yuva_digital_studio';
   private businessConfig: any;
-  private isInitialized = false;  constructor() {
+
+  constructor() {
     if (config.huggingface?.apiKey) {
       this.hf = new HfInference(config.huggingface.apiKey);
     } else {
       console.warn('⚠️  HuggingFace API key not found. RAG embeddings will use fallback search.');
       this.hf = null;
     }
-    
-    try {
-      this.chromaClient = new ChromaClient({
-        host: 'localhost',
-        port: 8000,
-      });
-    } catch (error) {
-      console.warn('⚠️  ChromaDB not available. Using fallback search only.');
-      this.chromaClient = null as any;
-    }
-    
     this.businessConfig = getBusinessConfig();
-  }
-  async initialize(): Promise<void> {
-    if (this.isInitialized) return;
-
-    try {
-      if (this.chromaClient) {
-        try {
-          await this.chromaClient.getCollection({ name: this.collectionName });
-          console.log('Using existing ChromaDB collection');
-        } catch (error) {
-          console.log('Creating new ChromaDB collection');
-          await this.chromaClient.createCollection({ name: this.collectionName });
-          await this.indexBusinessKnowledge();
-        }
-      } else {
-        console.log('ChromaDB not available, using fallback search');
-      }
-      
-      this.isInitialized = true;
-    } catch (error) {
-      console.warn('ChromaDB not available, falling back to in-memory search:', error);
-      this.isInitialized = true;
-    }
-  }private async getEmbedding(text: string): Promise<number[]> {
-    try {
-      if (!this.hf) {
-        console.log('🔄 HuggingFace not available, skipping embedding generation');
-        return [];
-      }
-        const response = await this.hf.featureExtraction({
-        model: 'sentence-transformers/all-MiniLM-L6-v2',
-        inputs: text,
-      });
-      
-      if (Array.isArray(response)) {
-        if (response.length > 0 && Array.isArray(response[0])) {
-          return response[0] as number[];
-        }
-        return response as number[];
-      }
-      
-      return [];
-    } catch (error) {
-      console.error('Failed to generate embedding:', error);
-      return [];
-    }
-  }
-
-  private async indexBusinessKnowledge(): Promise<void> {
-    const documents = this.generateBusinessDocuments();
-      try {
-      const collection = await this.chromaClient.getCollection({ name: this.collectionName });
-      
-      const embeddings = await Promise.all(
-        documents.map(doc => this.getEmbedding(doc.content))
-      );
-
-      await collection.add({
-        ids: documents.map(doc => doc.id),
-        embeddings: embeddings.filter(emb => emb.length > 0),
-        documents: documents.map(doc => doc.content),
-        metadatas: documents.map(doc => doc.metadata),
-      });
-
-      console.log(`Indexed ${documents.length} business knowledge documents`);
-    } catch (error) {
-      console.error('Failed to index business knowledge:', error);
-    }
   }
 
   private generateBusinessDocuments(): RAGDocument[] {
@@ -146,7 +65,9 @@ export class RAGService {
     });
 
     return documents;
-  }  private getBusinessOverview(language: 'hi' | 'en'): string {
+  }
+
+  private getBusinessOverview(language: 'hi' | 'en'): string {
     const business = this.businessConfig;
     
     switch (language) {
@@ -176,6 +97,7 @@ export class RAGService {
     
     return content;
   }
+
   private getPricingDescription(language: 'hi' | 'en'): string {
     const business = this.businessConfig;
     
@@ -187,6 +109,7 @@ export class RAGService {
         return `Our main service pricing:\n- Wedding Photography: Starting from ₹25,000\n- Portrait Session: Starting from ₹5,000\n- Event Photography: Starting from ₹15,000\n- Pre-wedding Shoot: Starting from ₹12,000\nAll prices are exclusive of GST. Contact us for detailed package information.`;
     }
   }
+
   private getPoliciesDescription(language: 'hi' | 'en'): string {
     switch (language) {
       case 'hi':
@@ -196,34 +119,10 @@ export class RAGService {
         return `Our policies:\n- 50% advance payment at booking time\n- Remaining amount after service completion\n- Cancellation: 48 hours advance notice required\n- Weather delays may occur\n- All photos delivered within 7-14 days\n- Digital copies + prints available`;
     }
   }
-  async searchKnowledge(query: string, language: 'hi' | 'en' = 'hi', limit: number = 3): Promise<string[]> {
-    await this.initialize();
-    
-    if (!this.chromaClient) {
-      console.log('🔄 Using fallback search (ChromaDB not available)');
-      return this.fallbackSearch(query, language, limit);
-    }
-    
-    try {
-      const collection = await this.chromaClient.getCollection({ name: this.collectionName });
-      
-      const queryEmbedding = await this.getEmbedding(query);
-      
-      if (queryEmbedding.length === 0) {
-        return this.fallbackSearch(query, language, limit);
-      }
 
-      const results = await collection.query({
-        queryEmbeddings: [queryEmbedding],
-        nResults: limit,
-        where: { language: language },
-      });
-      
-      return results.documents?.[0]?.filter(doc => doc !== null) as string[] || [];
-    } catch (error) {
-      console.warn('ChromaDB search failed, using fallback:', error);
-      return this.fallbackSearch(query, language, limit);
-    }
+  async searchKnowledge(query: string, language: 'hi' | 'en' = 'hi', limit: number = 3): Promise<string[]> {
+    // Only use fallback search
+    return this.fallbackSearch(query, language, limit);
   }
 
   private fallbackSearch(query: string, language: 'hi' | 'en', limit: number): string[] {
@@ -238,7 +137,9 @@ export class RAGService {
       .map(doc => doc.content);
       
     return relevantDocs.length > 0 ? relevantDocs : [this.getBusinessOverview(language)];
-  }  extractEntitiesFromUserInput(input: string, language: 'hi' | 'en' = 'hi') {
+  }
+
+  extractEntitiesFromUserInput(input: string, language: 'hi' | 'en' = 'hi') {
     let name = ''
     let phone = ''
     let date = ''
@@ -261,16 +162,46 @@ export class RAGService {
       if (dateMatch) date = dateMatch[1];
     }
     return { name, phone, date };
-  }  async generateRAGResponse(query: string, language: 'hi' | 'en' = 'hi'): Promise<any> {
+  }
+
+  private formatBusinessContext(language: 'hi' | 'en' = 'en'): string {
+    const config = getBusinessConfig();
+    let context = '';
+    if (language === 'hi') {
+      context += `स्टूडियो का नाम: ${config.name}\n`;
+      context += `पता: ${config.location.address}, ${config.location.city}, ${config.location.state}, ${config.location.pincode}\n`;
+      context += `संपर्क: ${config.contact.phone.join(', ')} | ईमेल: ${config.contact.email}\n`;
+      context += `मालिक: ${config.businessOwner?.name || ''}\n`;
+      context += `सेवाएं: ${config.services.filter(s => s.isActive).map(s => s.nameHi).join(', ')}\n`;
+      context += `खासियतें: ${(config.specialFeatures || []).join(', ')}\n`;
+      context += `काम के घंटे: "${Object.entries(config.workingHours).map(([day, wh]) => `${day}: ${wh.open}-${wh.close}`).join(', ')}"\n`;
+    } else {
+      context += `Studio Name: ${config.name}\n`;
+      context += `Address: ${config.location.address}, ${config.location.city}, ${config.location.state}, ${config.location.pincode}\n`;
+      context += `Contact: ${config.contact.phone.join(', ')} | Email: ${config.contact.email}\n`;
+      context += `Owner: ${config.businessOwner?.name || ''}\n`;
+      context += `Services: ${config.services.filter(s => s.isActive).map(s => s.name).join(', ')}\n`;
+      context += `Special Features: ${(config.specialFeatures || []).join(', ')}\n`;
+      context += `Working Hours: "${Object.entries(config.workingHours).map(([day, wh]) => `${day}: ${wh.open}-${wh.close}`).join(', ')}"\n`;
+    }
+    return context;
+  }
+
+  async generateRAGResponse(query: string, language: 'hi' | 'en' = 'hi', sessionMemory?: { extractedData?: any, conversationHistory?: any[] }): Promise<any> {
     try {
       const entities = this.extractEntitiesFromUserInput(query, language);
-      if (!config.openRouter?.apiKey) {
-        return { response: this.getFallbackResponse(language), entities };
+      const businessContext = this.formatBusinessContext(language);
+      let historyContext = '';
+      if (sessionMemory && sessionMemory.conversationHistory) {
+        const lastTurns = sessionMemory.conversationHistory.slice(-6).map(msg => `${msg.role}: ${msg.content}`).join('\n');
+        historyContext = `Recent Conversation:\n${lastTurns}\n`;
       }
-      const relevantDocs = await this.searchKnowledge(query, language, 3);
-      const context = relevantDocs.join('\n\n');
+      let memoryContext = '';
+      if (sessionMemory && sessionMemory.extractedData) {
+        memoryContext = `Known Details: ${JSON.stringify(sessionMemory.extractedData)}\n`;
+      }
       const systemMessage = this.getSystemMessage(language);
-      const userMessage = `Based on the following business information, answer the user's question in ${language === 'hi' ? 'Hindi' : 'English'} with a SHORT and CONVERSATIONAL response (maximum 2-3 sentences):\n\nContext:\n${context}\n\nUser Question: ${query}\n\nKeep your response brief, friendly, and easy to understand when spoken aloud. If the question cannot be answered from the context, politely say so and suggest contacting the studio directly.`;
+      const userMessage = `You are an expert assistant for a photography studio. Use the following business information, conversation history, and known details to answer the user's question.\n\nBusiness Info:\n${businessContext}\n${historyContext}${memoryContext}User Question: ${query}\n\nIf the answer is not in the business info, politely say so and suggest contacting the studio directly. Respond in a short, friendly, and conversational way. Use sales techniques and be persuasive when appropriate.`;
       const response = await axios.post(
         'https://openrouter.ai/api/v1/chat/completions',
         {
@@ -279,8 +210,8 @@ export class RAGService {
             { role: 'system', content: systemMessage },
             { role: 'user', content: userMessage }
           ],
-          max_tokens: 100,
-          temperature: 0.3,
+          max_tokens: 160,
+          temperature: 0.35,
         },
         {
           headers: {
@@ -298,7 +229,9 @@ export class RAGService {
     } catch (error) {
       return { response: this.getFallbackResponse(language), entities: this.extractEntitiesFromUserInput(query, language) };
     }
-  }  private getSystemMessage(language: 'hi' | 'en'): string {
+  }
+
+  private getSystemMessage(language: 'hi' | 'en'): string {
     switch (language) {
       case 'hi':
         return 'आप युवा डिजिटल स्टूडियो के लिए एक AI असिस्टेंट हैं। हमेशा हिंदी में छोटे, स्पष्ट, और मित्रवत जवाब दें। बोलने के लिए आसान भाषा का उपयोग करें।';
@@ -306,7 +239,9 @@ export class RAGService {
       default:
         return 'You are an AI assistant for Yuva Digital Studio. Always respond with short, clear, and friendly answers in English. Use simple language that is easy to speak aloud.';
     }
-  }private getFallbackResponse(language: 'hi' | 'en'): string {
+  }
+
+  private getFallbackResponse(language: 'hi' | 'en'): string {
     switch (language) {
       case 'hi':
         return 'क्षमा करें, मैं इस प्रश्न का उत्तर नहीं दे सकता। कृपया सीधे हमसे संपर्क करें: ' + this.businessConfig.contact.phone[0];

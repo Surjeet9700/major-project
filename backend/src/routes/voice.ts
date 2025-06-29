@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { validateTwilioWebhook } from '../middleware/validation';
 import { sessionManager } from '../services/sessionManager';
 import { asyncHandler } from '../middleware/errorHandler';
+import { freeVoiceService } from '../services/freeVoiceService';
 import {
   handleIncomingCall,
   handleLanguageSelection,
@@ -17,6 +18,27 @@ router.post('/language-select', validateTwilioWebhook, handleLanguageSelection);
 router.post('/process-intent', validateTwilioWebhook, handleIntentProcessing);
 router.post('/handle-booking', validateTwilioWebhook, handleBooking);
 router.post('/handle-tracking', validateTwilioWebhook, handleTracking);
+
+// Set email for voice session
+router.post('/set-email', asyncHandler(async (req: Request, res: Response) => {
+  const { sessionId, email } = req.body;
+  
+  if (!sessionId) {
+    return res.status(400).json({ error: 'Session ID is required' });
+  }
+
+  console.log('📧 Setting email for session:', { sessionId, email });
+
+  // Store email in free voice service session
+  freeVoiceService.setSessionEmail(sessionId, email);
+
+  res.status(200).json({ 
+    success: true, 
+    message: 'Email set successfully',
+    sessionId,
+    email: email || 'not provided'
+  });
+}));
 
 // Voice status callback endpoint
 router.post('/voice/status', validateTwilioWebhook, asyncHandler(async (req: Request, res: Response) => {
@@ -45,7 +67,8 @@ router.get('/status', (req, res) => {
       'POST /api/language-select - Handle language selection',
       'POST /api/process-intent - Process user intents',
       'POST /api/handle-booking - Handle appointment booking',
-      'POST /api/handle-tracking - Handle order tracking'
+      'POST /api/handle-tracking - Handle order tracking',
+      'POST /api/set-email - Set email for voice session'
     ]
   });
 });

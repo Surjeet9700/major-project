@@ -73,7 +73,16 @@ export class OpenRouterService {
     context: string[] = []
   ): Promise<AIResponse> {
     try {
-      const messages = this.buildMessages(userInput, language, context);
+      // Preprocess and validate input
+      const processedInput = this.preprocessInput(userInput, language);
+      
+      // If input is too unclear, use fallback immediately
+      if (this.isInputTooUnclear(processedInput)) {
+        console.log(`🔄 Input too unclear, using fallback: "${processedInput}"`);
+        return this.getRateLimitFallback(processedInput, language, context);
+      }
+
+      const messages = this.buildMessages(processedInput, language, context);
 
       const response = await fetch(this.apiUrl, {
         method: "POST",
@@ -82,7 +91,8 @@ export class OpenRouterService {
           "HTTP-Referer": config.server.baseUrl,
           "X-Title": "Yuva Digital Studio Voice Bot",
           "Content-Type": "application/json",
-        },        body: JSON.stringify({
+        },
+        body: JSON.stringify({
           model: this.model,
           messages: messages,
           max_tokens: 100, // Even shorter for faster, more concise responses
@@ -90,22 +100,30 @@ export class OpenRouterService {
           stream: false,
           stop: ["\n\n", "User:", "Assistant:"], // Stop tokens to prevent incomplete responses
         }),
-      });      if (response.status === 429) {
+      });
+
+      if (response.status === 429) {
         console.warn("Rate limit hit, using intelligent fallback");
-        return this.getRateLimitFallback(userInput, language, context);
+        return this.getRateLimitFallback(processedInput, language, context);
       }
 
       if (!response.ok) {
         console.warn(`OpenRouter API error: ${response.statusText}, using fallback`);
-        return this.getErrorFallback(userInput, language);
+        return this.getErrorFallback(processedInput, language);
       }
 
       const data = await response.json();
       const messageChoice = data.choices?.[0]?.message;
       const assistantMessage = messageChoice?.content || messageChoice?.reasoning || "";
 
-      const intent = this.extractIntent(userInput, language);
-      const nextAction = this.determineNextAction(intent, userInput, language);
+      // Validate AI response
+      if (!assistantMessage || assistantMessage.trim().length < 5) {
+        console.warn("AI response too short, using fallback");
+        return this.getRateLimitFallback(processedInput, language, context);
+      }
+
+      const intent = this.extractIntent(processedInput, language);
+      const nextAction = this.determineNextAction(intent, processedInput, language);
 
       return {
         text: this.cleanResponse(assistantMessage),
@@ -129,6 +147,42 @@ export class OpenRouterService {
         ),
       };
     }
+  }
+
+  private preprocessInput(userInput: string, language: "hi" | "en"): string {
+    let processed = userInput.trim();
+    
+    // Remove common speech artifacts
+    processed = processed.replace(/\b(um|uh|ah|er|hmm|like|you know|i mean)\b/gi, '');
+    processed = processed.replace(/\s+/g, ' '); // Normalize whitespace
+    
+    // Handle incomplete sentences
+    if (processed.endsWith('of') || processed.endsWith('the') || processed.endsWith('a') || 
+        processed.endsWith('an') || processed.endsWith('for') || processed.endsWith('to') ||
+        processed.endsWith('with') || processed.endsWith('about') || processed.endsWith('on')) {
+      // Add context to incomplete sentences
+      processed += language === 'hi' ? ' क्या पूछ रहे हैं?' : ' what are you asking about?';
+    }
+    
+    return processed;
+  }
+
+  private isInputTooUnclear(input: string): boolean {
+    const lowerInput = input.toLowerCase();
+    
+    // Very short inputs
+    if (input.trim().length < 3) return true;
+    
+    // Incomplete thoughts
+    if (lowerInput.includes('modern solution') || lowerInput.includes('sources of')) return true;
+    
+    // Just question words without context
+    if (/^(what|how|why|when|where|who)\s*$/.test(lowerInput)) return true;
+    
+    // Single words that don't provide enough context
+    if (/^[a-zA-Z]+$/.test(input) && input.length < 8) return true;
+    
+    return false;
   }
 
   private buildMessages(
@@ -174,8 +228,11 @@ export class OpenRouterService {
 नियम:
 - हमेशा 2 लाइन या कम में जवाब दें (वॉयस के लिए)
 - विनम्र और सहायक रहें
+- अगर उपयोगकर्ता का इनपुट अधूरा या अस्पष्ट है, तो स्पष्टीकरण मांगें
 - अगर आप किसी चीज़ के बारे में निश्चित नहीं हैं तो स्पष्ट करने के लिए कहें
-- व्यावहारिक कार्रवाई सुझाएं`;
+- व्यावहारिक कार्रवाई सुझाएं
+- कभी भी अधूरा जवाब न दें - हमेशा पूरा और स्पष्ट जवाब दें
+- अगर उपयोगकर्ता अधूरा वाक्य बोलता है, तो उसे पूरा करने में मदद करें`;
     } else {
       return `You are an intelligent voice assistant for ${businessName}. You are an experienced AI agent capable of:
 
@@ -190,9 +247,13 @@ Your responsibilities:
 Rules:
 - Always respond in 2 lines or less (for voice interaction)
 - Be polite and helpful
+- If the user's input is incomplete or unclear, ask for clarification
 - If unsure about something, ask for clarification
 - Suggest practical next steps
-- Take initiative to guide the conversation toward booking or helping the customer`;
+- Take initiative to guide the conversation toward booking or helping the customer
+- NEVER give incomplete answers - always provide complete and clear responses
+- If the user speaks an incomplete sentence, help them complete it
+- Handle any type of input gracefully, even if unclear or partial`;
     }
   }  private cleanResponse(text: string): string {
     let cleaned = text
@@ -487,22 +548,67 @@ Rules:
       }
     }
     
-    const lowerInput = actualUserInput.toLowerCase();
+    const lowerInput = actualUserInput.toLowerCase().trim();
     
-    let response = "";
-    let intent = "general";
+    // Handle very short or incomplete inputs
+    if (lowerInput.length < 3) {
+      return {
+        text: language === "hi" 
+          ? "मैं आपकी बात समझ नहीं पाया। कृपया अपना सवाल पूरा बताएं।"
+          : "I didn't understand. Please complete your question.",
+        intent: "clarification",
+        confidence: 0.6,
+        language: language,
+        nextAction: "continue_conversation"
+      };
+    }
     
     // Parse session context for better understanding
     const contextText = context.join(' ').toLowerCase();
     const hasNameInSession = contextText.includes('name=') && !contextText.includes('name=unknown') && !contextText.includes('name=null');
     const hasPhoneInSession = contextText.includes('phone=') && !contextText.includes('phone=unknown') && !contextText.includes('phone=null');
     const hasServiceInSession = contextText.includes('service=') && !contextText.includes('service=unknown') && !contextText.includes('service=null');
-    const hasBookingContext = contextText.includes('book') || contextText.includes('appointment');
+    const hasBookingContext = contextText.includes('book') || contextText.includes('appointment') || contextText.includes('name') || contextText.includes('phone');
     
     console.log(`🔄 Rate limit fallback - Input: "${actualUserInput}" | Has name: ${hasNameInSession}, phone: ${hasPhoneInSession}, service: ${hasServiceInSession}`);
     console.log(`📋 Context: ${contextText}`);
-      // Handle name provided - check for actual names (proper nouns)
-    if (lowerInput.includes("name is") || lowerInput.includes("i am") || lowerInput.includes("my name") || 
+    
+    let response = "";
+    let intent = "general";
+    
+    // Handle incomplete sentences or partial thoughts
+    if (lowerInput.endsWith("of") || lowerInput.endsWith("the") || lowerInput.endsWith("a") || 
+        lowerInput.endsWith("an") || lowerInput.endsWith("for") || lowerInput.endsWith("to") ||
+        lowerInput.endsWith("with") || lowerInput.endsWith("about") || lowerInput.endsWith("on") ||
+        lowerInput.includes("modern solution") || lowerInput.includes("sources of")) {
+      
+      if (hasBookingContext) {
+        if (!hasNameInSession) {
+          response = language === "hi" 
+            ? "बुकिंग के लिए कृपया अपना नाम बताएं।"
+            : "For booking, please tell me your name.";
+        } else if (!hasPhoneInSession) {
+          response = language === "hi" 
+            ? "अब कृपया अपना मोबाइल नंबर बताएं।"
+            : "Now please provide your mobile number.";
+        } else if (!hasServiceInSession) {
+          response = language === "hi" 
+            ? "कौन सी सेवा चाहिए - Wedding, Portrait, या Event फोटोग्राफी?"
+            : "Which service do you need - Wedding, Portrait, or Event photography?";
+        } else {
+          response = language === "hi" 
+            ? "आपको और क्या जानकारी चाहिए?"
+            : "What other information do you need?";
+        }
+      } else {
+        response = language === "hi" 
+          ? "मैं आपकी मदद कर सकता हूं। क्या आप फोटोग्राफी सेवाओं के बारे में जानना चाहते हैं या बुकिंग करना चाहते हैं?"
+          : "I can help you. Would you like to know about our photography services or make a booking?";
+      }
+      intent = "clarification";
+    }
+    // Handle name provided - check for actual names (proper nouns)
+    else if (lowerInput.includes("name is") || lowerInput.includes("i am") || lowerInput.includes("my name") || 
         lowerInput.includes("नाम") || /\b[A-Z][a-z]+\b/.test(actualUserInput)) {
       if (hasNameInSession && !hasPhoneInSession) {
         // Name already captured, need phone
@@ -597,6 +703,38 @@ Rules:
         : "Our Wedding Photography packages range from 35,000 to 1,25,000. This includes full day coverage, online gallery and editing. Please share your name to book.";
       intent = "service_specific";
     }
+    // Handle unclear or ambiguous inputs
+    else if (lowerInput.includes("modern") || lowerInput.includes("solution") || lowerInput.includes("source") || 
+             lowerInput.includes("what") || lowerInput.includes("how") || lowerInput.includes("why") ||
+             lowerInput.includes("when") || lowerInput.includes("where")) {
+      
+      if (hasBookingContext) {
+        // If we're in a booking context, guide back to booking flow
+        if (!hasNameInSession) {
+          response = language === "hi" 
+            ? "बुकिंग के लिए कृपया अपना नाम बताएं।"
+            : "For booking, please tell me your name.";
+        } else if (!hasPhoneInSession) {
+          response = language === "hi" 
+            ? "अब कृपया अपना मोबाइल नंबर बताएं।"
+            : "Now please provide your mobile number.";
+        } else if (!hasServiceInSession) {
+          response = language === "hi" 
+            ? "कौन सी सेवा चाहिए - Wedding, Portrait, या Event फोटोग्राफी?"
+            : "Which service do you need - Wedding, Portrait, or Event photography?";
+        } else {
+          response = language === "hi" 
+            ? "आपकी बुकिंग के लिए सभी जानकारी मिल गई है। क्या आप कन्फर्म करना चाहते हैं?"
+            : "I have all the information for your booking. Would you like to confirm?";
+        }
+      } else {
+        // General context - offer help
+        response = language === "hi" 
+          ? "मैं आपकी मदद कर सकता हूं। क्या आप फोटोग्राफी सेवाओं के बारे में जानना चाहते हैं या बुकिंग करना चाहते हैं?"
+          : "I can help you. Would you like to know about our photography services or make a booking?";
+      }
+      intent = "clarification";
+    }
     // Generic response based on session state
     else {
       if (hasBookingContext) {
@@ -667,5 +805,79 @@ Rules:
     const greetings = language === "hi" ? greetingsHi : greetingsEn;
     const randomIndex = Math.floor(Math.random() * greetings.length);
     return greetings[randomIndex];
+  }
+
+  /**
+   * Uses LLM to extract both intent and entities from user input in a single call.
+   * Returns: { intent, confidence, entities }
+   */
+  async extractIntentAndEntitiesLLM(userInput: string, language: "hi" | "en" = "en"): Promise<{
+    intent: string;
+    confidence: number;
+    entities: {
+      name?: string;
+      phone?: string;
+      date?: string;
+      time?: string;
+      service?: string;
+      [key: string]: any;
+    };
+  }> {
+    const systemPrompt = language === 'hi'
+      ? `आप एक स्मार्ट असिस्टेंट हैं। निम्नलिखित उपयोगकर्ता इनपुट से मुख्य intent (booking, inquiry, pricing, help, greeting, clarification, cancellation, etc.) और entities (name, phone, date, time, service) निकालें।
+
+उत्तर एक JSON ऑब्जेक्ट के रूप में दें:
+{"intent": "...", "confidence": 0.9, "entities": {"name": "...", "phone": "...", "date": "...", "time": "...", "service": "..."}}`
+      : `You are a smart assistant. From the following user input, extract the main intent (booking, inquiry, pricing, help, greeting, clarification, cancellation, etc.) and any entities (name, phone, date, time, service).
+
+Respond with a JSON object:
+{"intent": "...", "confidence": 0.9, "entities": {"name": "...", "phone": "...", "date": "...", "time": "...", "service": "..."}}`;
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userInput }
+    ];
+
+    try {
+      const response = await fetch(this.apiUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "HTTP-Referer": config.server.baseUrl,
+          "X-Title": "Yuva Digital Studio Voice Bot",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: messages,
+          max_tokens: 120,
+          temperature: 0.2,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content || "";
+        // Try to parse JSON from the LLM response
+        try {
+          const parsed = JSON.parse(content);
+          return parsed;
+        } catch (e) {
+          // If not valid JSON, fallback to basic intent extraction
+          return {
+            intent: this.extractIntent(userInput, language),
+            confidence: 0.7,
+            entities: {},
+          };
+        }
+      }
+    } catch (error) {
+      console.error("LLM intent/entity extraction error:", error);
+    }
+    // Fallback
+    return {
+      intent: this.extractIntent(userInput, language),
+      confidence: 0.6,
+      entities: {},
+    };
   }
 }

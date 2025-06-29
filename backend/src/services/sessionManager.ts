@@ -54,6 +54,16 @@ class SessionManager {
     }
   }
 
+  setSessionEmail(sessionId: string, email: string): void {
+    // For free voice service sessions, we need to update the session in freeVoiceService
+    // This is a bridge method that will be called by the API endpoint
+    console.log('📧 Setting email for session:', { sessionId, email });
+    
+    // In a real implementation, you would store this in a database
+    // For now, we'll just log it and the freeVoiceService will handle it
+    // when the session is created or updated
+  }
+
   endSession(callSid: string): void {
     delete this.sessions[callSid];
   }

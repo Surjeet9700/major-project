@@ -632,7 +632,7 @@ router.post('/voice/conversation', asyncHandler(async (req: Request, res: Respon
 
 // Enhanced Voice Agent endpoint with TTS audio response
 router.post('/voice/conversation-audio', asyncHandler(async (req: Request, res: Response) => {
-  const { sessionId, userInput, language = 'hi', action } = req.body;
+  const { sessionId, userInput, language = 'hi', action, noAudio } = req.body;
   
   // Handle cleanup action
   if (action === 'cleanup') {
@@ -660,27 +660,53 @@ router.post('/voice/conversation-audio', asyncHandler(async (req: Request, res: 
     }
   }
   
-  if (!sessionId || !userInput) {
+  if (!sessionId) {
     return res.status(400).json({
       success: false,
-      message: 'Session ID and user input are required'
+      message: 'Session ID is required'
+    });
+  }
+
+  // Handle empty or whitespace-only input gracefully
+  if (!userInput || typeof userInput !== 'string' || userInput.trim().length === 0) {
+    const fallbackResponse = {
+      response: language === 'hi' ? 
+        'मैं आपकी बात नहीं सुन पाया। कृपया फिर से बोलें।' : 
+        'I could not hear you clearly. Please speak again.',
+      intent: 'clarification',
+      nextAction: 'continue_conversation'
+    };
+    
+    return res.json({
+      success: true,
+      data: {
+        response: fallbackResponse,
+        audioUrl: null,
+        fallbackTTS: true,
+        sessionId,
+        timestamp: new Date().toISOString()
+      }
     });
   }
 
   try {
     const textResponse = await freeVoiceService.processConversation(sessionId, userInput, language);
-      // Generate TTS audio with slower, female voice
-    const audioFilename = `tts_${sessionId}_${Date.now()}.wav`;
-    const voiceSettings = {
-      speed: 0.8, // Slower speech
-      gender: 'female' as const
-    };
-    const audioUrl = await ttsService.generateAndSaveAudio(textResponse, language, audioFilename, voiceSettings);
-      res.json({
+    // If textResponse is an object, extract the response string
+    const responseText = typeof textResponse === 'string' ? textResponse : textResponse.response;
+    let audioUrl = null;
+    if (!noAudio) {
+      const audioFilename = `tts_${sessionId}_${Date.now()}.wav`;
+      const voiceSettings = {
+        speed: 0.8, // Slower speech
+        gender: 'female' as const
+      };
+      audioUrl = await ttsService.generateAndSaveAudio(responseText, language, audioFilename, voiceSettings);
+    }
+    res.json({
       success: true,
       data: {
         response: textResponse,
-        audioUrl: audioUrl, // Will be null if TTS fails, frontend can fallback to browser TTS
+        audioUrl: audioUrl, // Will be null if TTS is skipped or fails
         fallbackTTS: audioUrl === null, // Indicate to frontend to use browser TTS
         sessionId,
         timestamp: new Date().toISOString()
@@ -950,6 +976,38 @@ router.post('/voice/cleanup-old-audio', asyncHandler(async (req: Request, res: R
       message: 'Error cleaning up old audio files'
     });
   }
+}));
+
+// Set email for voice session
+router.post('/voice/set-email', asyncHandler(async (req: Request, res: Response) => {
+  const { sessionId, email } = req.body;
+  
+  if (!sessionId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Session ID is required'
+    });
+  }
+
+  let session = freeVoiceService.getSession(sessionId);
+  if (!session) {
+    // Create session if it does not exist
+    freeVoiceService.setSessionEmail(sessionId, email);
+    session = freeVoiceService.getSession(sessionId);
+  } else {
+    session.customerEmail = email;
+  }
+
+  console.log(`📧 Email set for session ${sessionId}:`, email ? email : 'skipped');
+
+  res.json({
+    success: true,
+    message: email ? 'Email saved successfully' : 'Email collection skipped',
+    data: {
+      sessionId,
+      emailSet: !!email
+    }
+  });
 }));
 
 export default router;

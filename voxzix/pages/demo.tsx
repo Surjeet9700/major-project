@@ -14,7 +14,17 @@ import {
   IconArrowLeft,
   IconDevices,
   IconLanguage,
-  IconWorld
+  IconWorld,
+  IconSparkles,
+  IconCheck,
+  IconUsers,
+  IconAward,
+  IconTrendingUp,
+  IconBolt,
+  IconHeadphones,
+  IconMicrophone,
+  IconBrain,
+  IconGlobe
 } from '@tabler/icons-react';
 import Link from 'next/link';
 
@@ -67,6 +77,37 @@ const translations = {
         duration: "3-5 hours",
         features: ["Event coverage", "Candid shots", "Group photos", "Quick turnaround"]
       }
+    },
+    stats: {
+      customers: "500+ Happy Customers",
+      experience: "5+ Years Experience",
+      rating: "4.9/5 Rating",
+      languages: "Hindi & English"
+    },
+    benefits: {
+      title: "Why Choose AI Voice Agent?",
+      items: [
+        {
+          icon: IconBolt,
+          title: "24/7 Availability",
+          description: "Never miss a customer call, even outside business hours"
+        },
+        {
+          icon: IconHeadphones,
+          title: "Multilingual Support",
+          description: "Handle customers in Hindi and English seamlessly"
+        },
+        {
+          icon: IconBrain,
+          title: "Intelligent Responses",
+          description: "AI-powered conversations that understand context"
+        },
+        {
+          icon: IconUsers,
+          title: "Scalable Solution",
+          description: "Handle multiple calls simultaneously without additional staff"
+        }
+      ]
     }
   },
   hi: {
@@ -117,6 +158,37 @@ const translations = {
         duration: "3-5 घंटे",
         features: ["इवेंट कवरेज", "कैंडिड शॉट्स", "ग्रुप फोटो", "त्वरित टर्नअराउंड"]
       }
+    },
+    stats: {
+      customers: "500+ संतुष्ट ग्राहक",
+      experience: "5+ वर्षों का अनुभव",
+      rating: "4.9/5 रेटिंग",
+      languages: "हिंदी और अंग्रेजी"
+    },
+    benefits: {
+      title: "AI वॉइस एजेंट क्यों चुनें?",
+      items: [
+        {
+          icon: IconBolt,
+          title: "24/7 उपलब्धता",
+          description: "व्यापारिक घंटों के बाहर भी कभी ग्राहक कॉल न छूटे"
+        },
+        {
+          icon: IconHeadphones,
+          title: "बहुभाषी समर्थन",
+          description: "हिंदी और अंग्रेजी में ग्राहकों को निर्बाध रूप से संभालें"
+        },
+        {
+          icon: IconBrain,
+          title: "बुद्धिमान प्रतिक्रियाएं",
+          description: "संदर्भ को समझने वाली AI-संचालित बातचीत"
+        },
+        {
+          icon: IconUsers,
+          title: "मापनीय समाधान",
+          description: "अतिरिक्त स्टाफ के बिना एक साथ कई कॉल संभालें"
+        }
+      ]
     }
   }
 };
@@ -135,30 +207,41 @@ export default function BusinessDemo() {
         <meta name="description" content={selectedLanguage === 'hi' ? 'देखें कि VoxBiz AI वॉइस एजेंट फोटोग्राफी स्टूडियो के लिए वास्तविक ग्राहक बातचीत कैसे संभालता है।' : 'See how VoxBiz AI voice agent handles real customer interactions for a photography studio. Experience intelligent booking, pricing, and customer service automation.'} />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
-      </Head>      <div className="min-h-screen bg-background">
+      </Head>
+
+      <div className="min-h-screen bg-background">
         <ModernNavigation />
 
-        {/* Header */}
-        <section className="pt-24 pb-12 bg-background">
-          <div className="max-w-6xl mx-auto px-6">
+        {/* Enhanced Header with Gradient Background */}
+        <section className="pt-24 pb-16 bg-gradient-to-br from-primary/5 via-background to-secondary/5 relative overflow-hidden">
+          {/* Background Pattern */}
+          <div className="absolute inset-0 opacity-5">
+            <div className="absolute top-10 left-10 w-20 h-20 bg-primary rounded-full blur-xl"></div>
+            <div className="absolute top-40 right-20 w-32 h-32 bg-secondary rounded-full blur-xl"></div>
+            <div className="absolute bottom-20 left-1/3 w-24 h-24 bg-accent rounded-full blur-xl"></div>
+          </div>
+
+          <div className="max-w-6xl mx-auto px-6 relative">
             <div className="flex items-center justify-between mb-8">
-              <Link href="/" className="inline-flex items-center space-x-2 text-muted-foreground hover:text-foreground transition-colors">
-                <IconArrowLeft className="w-4 h-4" />
+              <Link href="/" className="inline-flex items-center space-x-2 text-muted-foreground hover:text-foreground transition-colors group">
+                <IconArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
                 <span>{t.backHome}</span>
               </Link>
-              {/* Language Selector */}
-              <div className="flex items-center space-x-2 bg-card/50 backdrop-blur-sm border border-border rounded-lg px-4 py-2">
+              
+              {/* Enhanced Language Selector */}
+              <div className="flex items-center space-x-2 bg-card/80 backdrop-blur-sm border border-border rounded-xl px-4 py-2 shadow-lg">
                 <IconLanguage className="w-4 h-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Language:</span>
-                <div className="flex items-center bg-background/80 rounded-md p-1 border">
+                <div className="flex items-center bg-background/80 rounded-lg p-1 border">
                   {(['en', 'hi'] as const).map((lang) => (
                     <button
                       key={lang}
                       onClick={() => setSelectedLanguage(lang)}
-                      className={`px-3 py-1.5 text-sm font-medium transition-all duration-200 rounded-sm ${selectedLanguage === lang
+                      className={`px-3 py-1.5 text-sm font-medium transition-all duration-200 rounded-md ${
+                        selectedLanguage === lang
                           ? 'bg-primary text-primary-foreground shadow-md transform scale-105'
                           : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                        }`}
+                      }`}
                     >
                       {lang === 'en' ? 'EN' : 'हि'}
                     </button>
@@ -166,120 +249,201 @@ export default function BusinessDemo() {
                 </div>
               </div>
             </div>
+
             <div className="text-center mb-16">
-              <div className="flex items-center justify-center space-x-4 mb-6">
-                <div className="inline-flex items-center px-3 py-1 bg-secondary text-secondary-foreground text-sm" style={{ borderRadius: 'var(--radius)' }}>
+              {/* Enhanced Badges */}
+              <div className="flex items-center justify-center space-x-4 mb-8">
+                <div className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-primary/10 to-primary/5 text-primary text-sm font-medium rounded-full border border-primary/20 shadow-sm">
                   <IconCamera className="w-3 h-3 mr-2" />
                   {t.businessDemo}
                 </div>
-                <div className="inline-flex items-center px-3 py-1 bg-primary/10 text-primary text-sm" style={{ borderRadius: 'var(--radius)' }}>
-                  <IconLanguage className="w-3 h-3 mr-2" />
+                <div className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-secondary/10 to-secondary/5 text-secondary-foreground text-sm font-medium rounded-full border border-secondary/20 shadow-sm">
+                  <IconSparkles className="w-3 h-3 mr-2" />
                   {selectedLanguage === 'hi' ? 'हिन्दी' : 'English'}
                 </div>
               </div>
 
-              <h1 className="text-4xl font-bold text-foreground mb-4">
+              <h1 className="text-5xl md:text-6xl font-bold text-foreground mb-6 bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text">
                 {t.title}
               </h1>
 
-              <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
+              <p className="text-xl text-muted-foreground max-w-4xl mx-auto leading-relaxed">
                 {t.subtitle}
               </p>
             </div>
           </div>
-        </section>        {/* Live Demo Section */}
-        <section className="py-16 bg-background">
-          <div className="max-w-6xl mx-auto px-6">
-            <div className="text-center mb-12">
-              <h2 className="text-2xl font-semibold text-foreground mb-4">
+        </section>
+
+        {/* Enhanced Live Demo Section */}
+        <section className="py-20 bg-background">
+          <div className="max-w-7xl mx-auto px-6">
+            <div className="text-center mb-16">
+              <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
                 {t.experienceAgent}
               </h2>
-              <p className="text-muted-foreground max-w-2xl mx-auto">
+              <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
                 {t.experienceSubtitle}
               </p>
-            </div>           
-             <div className="grid md:grid-cols-2 gap-8">
-              {/* Simulated Demo */}
-              <div className="flex">
-                <div className="bg-card border border-border p-6 w-full flex flex-col min-h-[600px]" style={{ borderRadius: 'var(--radius)' }}>
-                  <div className="flex items-center space-x-2 mb-4">
-                    <IconDevices className="w-5 h-5 text-primary" />
-                    <h3 className="text-lg font-medium text-foreground">
-                      {t.interactiveSimulation}
-                    </h3>
-                    <span className="bg-green-500/10 text-green-600 text-xs px-2 py-1" style={{ borderRadius: 'var(--radius)' }}>
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-8">
+              {/* Enhanced Simulated Demo */}
+              <div className="group">
+                <div className="bg-gradient-to-br from-card to-card/50 border border-border p-8 w-full flex flex-col min-h-[700px] rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 group-hover:scale-[1.02]">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <IconDevices className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold text-foreground">
+                        {t.interactiveSimulation}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">Try it now, completely free</p>
+                    </div>
+                    <span className="bg-green-500/10 text-green-600 text-xs px-3 py-1 rounded-full font-medium border border-green-500/20">
                       {t.freeTag}
                     </span>
                   </div>
-                  <div className="flex-1 mb-4">
+                  
+                  <div className="flex-1 mb-6">
                     <VoiceCallInterface language={selectedLanguage} />
                   </div>
 
-                  <div className="text-xs text-muted-foreground space-y-1 pt-4 border-t border-border">
-                    <p>• {t.features.browserSpeech}</p>
-                    <p>• {t.features.simulatedFlow}</p>
-                    <p>• {t.features.noCost}</p>
+                  <div className="text-sm text-muted-foreground space-y-2 pt-6 border-t border-border">
+                    <div className="flex items-center space-x-2">
+                      <IconCheck className="w-4 h-4 text-green-500" />
+                      <span>{t.features.browserSpeech}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <IconCheck className="w-4 h-4 text-green-500" />
+                      <span>{t.features.simulatedFlow}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <IconCheck className="w-4 h-4 text-green-500" />
+                      <span>{t.features.noCost}</span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Real Call Demo */}
-              <div className="flex">
-                <div className="bg-card border border-border p-6 w-full flex flex-col min-h-[600px]" style={{ borderRadius: 'var(--radius)' }}>
-                  <div className="flex items-center space-x-2 mb-4">
-                    <IconPhone className="w-5 h-5 text-primary" />
-                    <h3 className="text-lg font-medium text-foreground">
-                      {t.realCallDemo}
-                    </h3>
-                    <span className="bg-blue-500/10 text-blue-600 text-xs px-2 py-1" style={{ borderRadius: 'var(--radius)' }}>
+              {/* Enhanced Real Call Demo */}
+              <div className="group">
+                <div className="bg-gradient-to-br from-card to-card/50 border border-border p-8 w-full flex flex-col min-h-[700px] rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 group-hover:scale-[1.02]">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="p-2 bg-blue-500/10 rounded-lg">
+                      <IconPhone className="w-6 h-6 text-blue-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold text-foreground">
+                        {t.realCallDemo}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">Experience real AI conversation</p>
+                    </div>
+                    <span className="bg-blue-500/10 text-blue-600 text-xs px-3 py-1 rounded-full font-medium border border-blue-500/20">
                       {t.liveTag}
                     </span>
                   </div>
 
                   <div className="flex-1 flex flex-col justify-center">
-                    <div className="text-center space-y-4">
-                      <div className="w-16 h-16 bg-primary/10 flex items-center justify-center mx-auto" style={{ borderRadius: 'var(--radius)' }}>
-                        <IconPhone className="w-8 h-8 text-primary" />
+                    <div className="text-center space-y-6">
+                      <div className="w-20 h-20 bg-gradient-to-br from-blue-500/20 to-blue-600/20 flex items-center justify-center mx-auto rounded-2xl border border-blue-500/20">
+                        <IconPhone className="w-10 h-10 text-blue-500" />
                       </div>
 
                       <div>
-                        <h4 className="font-medium text-foreground mb-2">
+                        <h4 className="text-xl font-semibold text-foreground mb-3">
                           {t.getRealDemo}
                         </h4>
-                        <p className="text-sm text-muted-foreground mb-6">
+                        <p className="text-muted-foreground mb-8 leading-relaxed">
                           {t.getRealDemoDesc}
                         </p>
                       </div>
 
                       <button
                         onClick={() => setShowRequestForm(true)}
-                        className="bg-primary text-primary-foreground px-6 py-3 font-medium hover:opacity-90 transition-opacity w-full inline-flex items-center justify-center space-x-2"
-                        style={{ borderRadius: 'var(--radius)' }}
+                        className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-8 py-4 font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 w-full inline-flex items-center justify-center space-x-3 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105"
                       >
-                        <IconPhone className="w-4 h-4" />
+                        <IconPhone className="w-5 h-5" />
                         <span>{t.requestDemoCall}</span>
                       </button>
                     </div>
                   </div>
 
-                  <div className="text-xs text-muted-foreground space-y-1 pt-4 border-t border-border">
-                    <p>• {t.features.realTwilio}</p>
-                    <p>• {t.features.actualAI}</p>
-                    <p>• {t.features.fullDemo}</p>
+                  <div className="text-sm text-muted-foreground space-y-2 pt-6 border-t border-border">
+                    <div className="flex items-center space-x-2">
+                      <IconCheck className="w-4 h-4 text-blue-500" />
+                      <span>{t.features.realTwilio}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <IconCheck className="w-4 h-4 text-blue-500" />
+                      <span>{t.features.actualAI}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <IconCheck className="w-4 h-4 text-blue-500" />
+                      <span>{t.features.fullDemo}</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </section>        {/* Sample Business Info */}
-        <section className="py-16 bg-secondary/30">
-          <div className="max-w-6xl mx-auto px-6">
-            <div className="grid md:grid-cols-2 gap-12">
-              {/* Business Info */}
+        </section>
+
+        {/* Enhanced Business Info Section */}
+        <section className="py-20 bg-gradient-to-br from-secondary/20 via-background to-primary/5">
+          <div className="max-w-7xl mx-auto px-6">
+            <div className="grid lg:grid-cols-2 gap-16">
+              {/* Enhanced Business Info */}
               <div>
-                <h2 className="text-2xl font-semibold text-foreground mb-6">
-                  {t.businessName}
-                </h2>
+                <div className="mb-8">
+                  <h2 className="text-3xl font-bold text-foreground mb-4">
+                    {t.businessName}
+                  </h2>
+                  
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-2 gap-4 mb-8">
+                    <div className="bg-card border border-border p-4 rounded-xl">
+                      <div className="flex items-center space-x-3">
+                        <div className="p-2 bg-primary/10 rounded-lg">
+                          <IconUsers className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">{t.stats.customers}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-card border border-border p-4 rounded-xl">
+                      <div className="flex items-center space-x-3">
+                        <div className="p-2 bg-secondary/10 rounded-lg">
+                          <IconAward className="w-5 h-5 text-secondary-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">{t.stats.experience}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-card border border-border p-4 rounded-xl">
+                      <div className="flex items-center space-x-3">
+                        <div className="p-2 bg-green-500/10 rounded-lg">
+                          <IconStar className="w-5 h-5 text-green-500" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">{t.stats.rating}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-card border border-border p-4 rounded-xl">
+                      <div className="flex items-center space-x-3">
+                        <div className="p-2 bg-blue-500/10 rounded-lg">
+                          <IconGlobe className="w-5 h-5 text-blue-500" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">{t.stats.languages}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
                 <div className="space-y-4 mb-8">
                   <div className="flex items-center space-x-3 text-muted-foreground">
@@ -294,43 +458,33 @@ export default function BusinessDemo() {
                     <IconMail className="w-4 h-4" />
                     <span>info@yuvadigitalstudio.com</span>
                   </div>
-                  <div className="flex items-center space-x-3 text-muted-foreground">
-                    <IconStar className="w-4 h-4" />
-                    <span>4.9/5 rating • 200+ reviews</span>
-                  </div>
-                  <div className="flex items-center space-x-3 text-muted-foreground">
-                    <IconWorld className="w-4 h-4" />
-                    <span>
-                      {selectedLanguage === 'hi' ? 'हिंदी, अंग्रेजी' : 'Hindi, English'}
-                    </span>
-                  </div>
                 </div>
 
-                <p className="text-muted-foreground leading-relaxed">
+                <p className="text-muted-foreground leading-relaxed text-lg">
                   {t.businessDescription}
                 </p>
               </div>
 
-              {/* Services */}
+              {/* Enhanced Services */}
               <div>
-                <h3 className="text-xl font-semibold text-foreground mb-6">
+                <h3 className="text-2xl font-bold text-foreground mb-8">
                   {t.servicesAndPricing}
                 </h3>
 
-                <div className="space-y-4">
+                <div className="space-y-6">
                   {services.map((service, index) => (
-                    <div key={index} className="bg-card border border-border p-4" style={{ borderRadius: 'var(--radius)' }}>
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-medium text-foreground">{service.name}</h4>
-                        <span className="text-sm text-primary font-medium">{service.price}</span>
+                    <div key={index} className="bg-card border border-border p-6 rounded-xl hover:shadow-lg transition-all duration-300 hover:scale-[1.02] group">
+                      <div className="flex justify-between items-start mb-4">
+                        <h4 className="text-lg font-semibold text-foreground">{service.name}</h4>
+                        <span className="text-lg text-primary font-bold">{service.price}</span>
                       </div>
-                      <div className="flex items-center space-x-2 text-sm text-muted-foreground mb-3">
-                        <IconClock className="w-3 h-3" />
+                      <div className="flex items-center space-x-2 text-sm text-muted-foreground mb-4">
+                        <IconClock className="w-4 h-4" />
                         <span>{service.duration}</span>
                       </div>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-2">
                         {service.features.map((feature, idx) => (
-                          <span key={idx} className="text-xs bg-secondary text-secondary-foreground px-2 py-1" style={{ borderRadius: 'var(--radius)' }}>
+                          <span key={idx} className="text-xs bg-secondary text-secondary-foreground px-3 py-1.5 rounded-full font-medium">
                             {feature}
                           </span>
                         ))}
@@ -342,26 +496,53 @@ export default function BusinessDemo() {
             </div>
           </div>
         </section>
-        {/* CTA Section */}
-        <section className="py-16 bg-background">
-          <div className="max-w-3xl mx-auto px-6 text-center">
-            <h2 className="text-2xl font-semibold text-foreground mb-4">
+
+        {/* New Benefits Section */}
+        <section className="py-20 bg-background">
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="text-center mb-16">
+              <h2 className="text-3xl font-bold text-foreground mb-6">
+                {t.benefits.title}
+              </h2>
+            </div>
+            
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+              {t.benefits.items.map((benefit, index) => (
+                <div key={index} className="bg-card border border-border p-6 rounded-xl text-center hover:shadow-lg transition-all duration-300 hover:scale-105 group">
+                  <div className="w-16 h-16 bg-primary/10 flex items-center justify-center mx-auto mb-4 rounded-xl group-hover:bg-primary/20 transition-colors">
+                    <benefit.icon className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">
+                    {benefit.title}
+                  </h3>
+                  <p className="text-muted-foreground text-sm leading-relaxed">
+                    {benefit.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Enhanced CTA Section */}
+        <section className="py-20 bg-gradient-to-br from-primary/5 via-background to-secondary/5">
+          <div className="max-w-4xl mx-auto px-6 text-center">
+            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
               {t.readyToTransform}
             </h2>
-            <p className="text-muted-foreground mb-8">
+            <p className="text-lg text-muted-foreground mb-10 max-w-2xl mx-auto">
               {t.transformSubtitle}
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-6 justify-center">
               <button
                 onClick={() => setShowRequestForm(true)}
-                className="bg-primary text-primary-foreground px-6 py-3 font-medium hover:opacity-90 transition-opacity inline-flex items-center space-x-2"
-                style={{ borderRadius: 'var(--radius)' }}
+                className="bg-gradient-to-r from-primary to-primary/90 text-primary-foreground px-8 py-4 font-semibold hover:from-primary/90 hover:to-primary transition-all duration-300 inline-flex items-center space-x-3 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105"
               >
-                <IconPhone className="w-4 h-4" />
+                <IconPhone className="w-5 h-5" />
                 <span>{t.requestDemoCall}</span>
               </button>
               <Link href="/#contact">
-                <button className="bg-secondary text-secondary-foreground px-6 py-3 font-medium hover:opacity-90 transition-opacity" style={{ borderRadius: 'var(--radius)' }}>
+                <button className="bg-gradient-to-r from-secondary to-secondary/90 text-secondary-foreground px-8 py-4 font-semibold hover:from-secondary/90 hover:to-secondary transition-all duration-300 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105">
                   {t.getStartedToday}
                 </button>
               </Link>
@@ -370,7 +551,9 @@ export default function BusinessDemo() {
         </section>
 
         <Footer />
-      </div>      {showRequestForm && (
+      </div>
+
+      {showRequestForm && (
         <RequestCallForm
           onClose={() => setShowRequestForm(false)}
           language={selectedLanguage}
