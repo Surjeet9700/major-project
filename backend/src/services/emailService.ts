@@ -1,7 +1,7 @@
 import { Resend } from 'resend';
 
 // Use environment variable for Resend API key, with fallback for free testing
-const resendApiKey = process.env.RESEND_API_KEY || 're_QtrgwhrS_3DontdhTsRaL1nto34PmtWLf';
+const resendApiKey = process.env.RESEND_API_KEY ||;
 const resend = new Resend(resendApiKey);
 
 interface BookingDetails {
